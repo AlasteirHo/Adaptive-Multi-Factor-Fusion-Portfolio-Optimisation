@@ -1,0 +1,11 @@
+Metric,Value
+Initial Capital,"$10,000.00"
+Final Portfolio Value,"$10,544.94"
+Final Benchmark Value,"$10,736.70"
+Portfolio Return (%),5.45%
+Benchmark Return (%),7.37%
+Outperformance (%),-1.92%
+Total Trades,34
+Training Period,2023-04-17 to 2025-04-30 (512 days)
+Lookback Window,2025-05-01 to 2025-07-28 (60 days)
+Trading Period (Actual),2025-07-29 to 2025-10-31 (68 days)
