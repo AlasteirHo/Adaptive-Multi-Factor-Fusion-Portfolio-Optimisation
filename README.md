@@ -9,27 +9,25 @@ A meta-learning approach to financial sentiment analysis that integrates multipl
 
 This system performs the following workflow:
 
-1. **Data Collection** - Scrapes news articles from GDELT API and Twitter/X posts for 20 major stocks
-2. **Sentiment Analysis** - Uses FinBERT to convert news headlines into sentiment scores
-3. **Machine Learning** - Trains regression models to predict 14-day log returns using sentiment and price features
-4. **Portfolio Optimization** - Implements Top-K and Markowitz mean-variance strategies with backtesting
+1. **Data Collection** - Scrapes news articles from GDELT API and Twitter/X posts for major stocks
+2. **Preprocessing & Labelling** - Cleans and labels data for sentiment analysis
+3. **Portfolio Optimization** - Implements news-aware and price-aware portfolio strategies with backtesting
 
 ## Supported Stocks
 
-20 major S&P 500 stocks across multiple sectors:
+Major S&P 500 stocks across multiple sectors:
 
 | Sector | Tickers |
 |--------|---------|
 | Technology | NVDA, AAPL, MSFT, AVGO, ORCL, GOOGL, META, AMZN, TSLA |
 | Finance | BRK.B, JPM, V, MA |
-| Healthcare | LLY, JNJ, UNH |
-| Energy & Staples | XOM, WMT, PG, HD |
+| Energy & Consumer | XOM, HD |
 
 ## Technology Stack
 
 - **Languages:** Python 3.8+
-- **ML/NLP:** scikit-learn, PyTorch, Transformers (FinBERT)
-- **Data:** Pandas, NumPy, yfinance
+- **ML/NLP:** scikit-learn, Transformers (FinBERT/FinVADER)
+- **Data handling:** Pandas, NumPy, yfinance
 - **Web Scraping:** Selenium, undetected-chromedriver, GDELT API
 - **Visualization:** Matplotlib, Jupyter Notebook
 
@@ -37,35 +35,38 @@ This system performs the following workflow:
 
 ```
 FYP/
-├── Pipeline/                          # Main analysis and modeling
-│   ├── pipeline.ipynb                 # Full pipeline notebook
-│   ├── sentiment_price_baseline.ipynb # Baseline model notebook
-│   ├── news_sentiment_price_baseline.py
-│   ├── PO_variant.py                  # Markowitz optimization
-│   └── sentiment_price_markowitz_baseline.py
+├── Pipeline/                              # Main analysis and modeling
+│   ├── News_aware_PO.ipynb               # News-aware portfolio optimization
+│   └── Price_aware_PO copy.ipynb         # Price-aware portfolio optimization
 │
-├── scrapers/                          # Data collection scripts
-│   ├── GDELTscraper.py               # GDELT news scraper
-│   ├── twitter_scraper.py
-│   └── twitter_scraper2.py
+├── scrapers/                              # Data collection scripts
+│   ├── GDELTscraper.py                   # GDELT news API scraper
+│   ├── twitter_scraper.py                # Twitter/X scraper (primary)
+│   └── twitter_scraper2.py               # Twitter/X scraper (Second X account after rate limited)
 │
-├── preprocessing/                     # Data preprocessing
-│   └── sentiment_analyzer_news.py     # FinBERT sentiment analysis
+├── preprocessing/                         # Data preprocessing & labelling
+│   ├── news_preprocessing_labelling.ipynb    # News data preprocessing
+│   └── tweets_preprocessing_labelling.ipynb  # Tweets preprocessing & labelling
 │
-├── gdelt_news_data/                   # Raw news articles
-├── processed_data/news_sentiment_daily/  # Daily sentiment scores
-├── tweets/                            # Raw tweet data
-├── outputs/                           # Backtest results
+├── output/                                # Back-testing results
+│   ├── performance_metrics.csv           # Strategy performance metrics
+│   ├── portfolio_performance.csv         # Portfolio daily performance
+│   ├── price_based_performance_metrics.csv
+│   ├── price_based_portfolio_performance.csv
+│   ├── price_based_trade_log.csv
+│   └── trade_log.csv                     # Trading history
 │
-├── sp500_investment_analysis.py       # S&P 500 benchmark script
-└── .env                               # Environment variables
+├── tweets_labelled/                       # Labelled tweet data
+├── tweets_*.csv                           # Raw scraped tweets per ticker
+├── .env                                   # Environment variables (Twitter credentials)
+└── .gitignore                             # Git ignore file
 ```
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.12+
 - Chrome browser (for Twitter scraping)
 - CUDA-capable GPU (optional, for faster inference)
 
@@ -100,71 +101,38 @@ FYP/
 ```bash
 python scrapers/GDELTscraper.py
 ```
-Outputs: `gdelt_news_data/{TICKER}_news.csv`
 
-### Step 2: Collect Twitter Data (Optional)
+### Step 2: Collect Twitter Data
 ```bash
-python scrapers/twitter_scraper2.py
-```
-Outputs: `tweets/tweets_{TICKER}.csv`
-
-### Step 3: Sentiment Analysis
-```bash
-python preprocessing/sentiment_analyzer_news.py
-```
-Outputs: `processed_data/news_sentiment_daily/{TICKER}_news_sentiment_daily.csv`
-
-### Step 4: Train & Backtest Baseline Model
-```bash
-python Pipeline/news_sentiment_price_baseline.py
-```
-Outputs: `outputs/baseline_*.csv`
-
-### Step 5: Markowitz Portfolio Optimization
-```bash
-python Pipeline/PO_variant.py
-```
-Outputs: `outputs/markowitz_*.csv`
-
-### Interactive Analysis
-```bash
-jupyter notebook Pipeline/sentiment_price_baseline.ipynb
+python scrapers/twitter_scraper.py
 ```
 
-## Configuration
+### Step 3: Preprocess Data
+Run the Jupyter notebooks in `preprocessing/`:
+- `news_preprocessing_labelling.ipynb` - Process and label news data
+- `tweets_preprocessing_labelling.ipynb` - Process and label tweet data
 
-Key parameters in pipeline scripts:
-
-```python
-REBALANCE_N = 14              # Rebalance every 14 trading days
-TOP_K = 5                     # Select top 5 stocks by predicted return
-INITIAL_CAPITAL = 10_000      # Starting capital ($)
-
-MODEL_NAME = "ridge"          # Model type: "ridge" or "elasticnet"
-USE_TICKER_OHE = True         # Include ticker as one-hot feature
-
-# Markowitz parameters
-COV_LOOKBACK_DAYS = 126       # ~6 months for covariance estimation
-MAX_WEIGHT = 0.25             # Max allocation per stock
-```
+### Step 4: Portfolio Optimization
+Run the Jupyter notebooks in `Pipeline/`:
+- `News_aware_PO.ipynb` - News sentiment-aware portfolio optimization
+- `Price_aware_PO copy.ipynb` - Price-based portfolio optimization
 
 ## Output Files
 
 | File | Description |
 |------|-------------|
-| `baseline_equity_daily.csv` | Daily portfolio value and benchmark equity |
-| `baseline_trade_log.csv` | Rebalance dates with bought/held/sold tickers |
-| `baseline_trades_detail.csv` | Individual trade execution details |
-| `markowitz_equity_daily.csv` | Markowitz strategy equity curve |
-| `markowitz_rebalance_log.csv` | Markowitz rebalance transactions |
+| `performance_metrics.csv` | Strategy performance summary metrics |
+| `portfolio_performance.csv` | Daily portfolio value tracking |
+| `trade_log.csv` | Complete trading history with buy/sell actions |
+| `price_based_*.csv` | Price-based strategy outputs |
 
 ## Features
 
-- **Data Leakage Prevention:** Uses only t-1 data to predict t+14 returns
-- **Multiple Data Sources:** Financial news (GDELT) and social media (Twitter)
+- **Data Leakage Prevention:** Uses only t-1 data to predict future returns
+- **Multiple Data Sources:** Financial news (GDELT) and social media (Twitter/X)
 - **FinBERT Sentiment Analysis:** Domain-specific NLP model for financial text
-- **Backtesting Framework:** Daily mark-to-market with SPY benchmark comparison
-- **Portfolio Strategies:** Top-K selection and Markowitz mean-variance optimization
+- **Backtesting Framework:** Daily mark-to-market with benchmark comparison
+- **Portfolio Strategies:** News-aware and price-aware optimization approaches
 
 ## License
 
