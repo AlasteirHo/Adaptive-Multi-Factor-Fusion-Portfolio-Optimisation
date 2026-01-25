@@ -3,7 +3,7 @@
 An adaptive fusion approach to financial sentiment analysis that integrates multiple data sources (news articles and social media) and technical indicators to predict stock price direction and optimize an investment portfolio.
 
 **Author:** Alasteir Ho
-**Institution:** University of Greenwich (Final Year Project)
+\n **Institution:** University of Greenwich (Final Year Project)
 
 ## Overview
 
@@ -173,3 +173,4 @@ The model evaluation notebooks are located in `model/`:
 ## License
 
 This project is part of my Final Year Project at the University of Greenwich.
+
