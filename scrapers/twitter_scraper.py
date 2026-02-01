@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import random
 import time
-import csv
 import os
 import sys
+import subprocess
 import pandas as pd
 
 # Load environment variables from .env file
@@ -32,13 +32,24 @@ class TwitterScraper:
         options.add_argument("--start-maximized")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
 
-        # Auto-detect Chrome version and download matching driver (Due to chrome updates)
-        self.driver = uc.Chrome(
-            options=options,
-            driver_executable_path=None,  # Let it download fresh
-            browser_executable_path=None  # Auto-detect Chrome location
-        )
+        # Auto-detect Chrome version to install right drivers
+        chrome_version = None
+        try:
+            result = subprocess.run(
+                ['reg', 'query', r'HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon', '/v', 'version'],
+                capture_output=True, text=True
+            )
+            chrome_version = int(result.stdout.strip().split()[-1].split('.')[0])
+        except Exception:
+            pass
+
+        print(f"undetected_chromedriver version: {uc.__version__}")
+        print(f"Chrome version: {chrome_version}")
+        print("Launching Chrome...")
+
+        self.driver = uc.Chrome(options=options, version_main=chrome_version)
         print("Browser started successfully!")
 
     def login(self):
@@ -50,7 +61,6 @@ class TwitterScraper:
             # Enter username - try multiple selectors
             username_input = None
             selectors = [
-                'input[autocomplete="username"]',
                 'input[name="text"]',
                 'input[type="text"]'
             ]
@@ -78,7 +88,7 @@ class TwitterScraper:
             username_input.send_keys(Keys.ENTER)
             time.sleep(3)
 
-            # Check if Twitter asks for phone/email verification
+            # Check if Twitter asks for phone/email verification (Human intervention)
             try:
                 verification_input = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'input[data-testid="ocfEnterTextTextInput"]'))
@@ -108,9 +118,9 @@ class TwitterScraper:
 
         except Exception as e:
             print(f"Automated login failed: {e}")
-            print("\nMANUAL LOGIN REQUIRED")
-            print("Log in manually in the browser window.")
-            input("Press Enter in the terminal after logging in")
+            print("\nMANUAL LOGIN IS REQUIRED")
+            print("Log in manually from the browser window.")
+            input("Press Enter in this terminal after logging in")
 
         # Progress to next step
         self.click_search_icon()
@@ -147,7 +157,7 @@ class TwitterScraper:
             print(f"Error clicking search icon: {e}")
 
     def wait_for_tweets_to_load(self, timeout=10):
-        """Wait for tweets to appear on the page, return True if loaded, False otherwise."""
+        # Wait for tweets to appear on the page, return True if loaded, False otherwise.
         for _ in range(timeout):
             try:
                 tweets = self.driver.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]')
@@ -259,8 +269,8 @@ class TwitterScraper:
     def search_tweets(self, ticker, date, max_refresh_attempts=3, error_wait_minutes=10):
         # Searches for tweets with ticker symbol on a specific date chunk
         # Format: $AMD since:2025-10-10 until:2025-10-10
-        # Twitter's 'since' is inclusive, 'until' is exclusive
-        # So to get tweets ON a specific date, use since:date until:date+1
+        # X's 'since' is inclusive and 'until' is exclusive
+        # So to fetch tweets on a specific date, use since:date until:date+1
         since_date = date.strftime("%Y-%m-%d")
         until_date = (date + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -377,18 +387,20 @@ class TwitterScraper:
         return tweets_data
 
     def extract_tweet_data(self, tweet_element):
-        # Extract data from a single tweet element
+        # Extract data from a single tweet element (HTML payload)
         try:
             # Tweet body - replace newlines with spaces to keep CSV single-line
             body_element = tweet_element.find_element(By.CSS_SELECTOR, 'div[data-testid="tweetText"]')
             body = ' '.join(body_element.text.split())
 
-            # Timestamp
+            # Timestamp - skip tweet if no valid date found
             try:
                 time_element = tweet_element.find_element(By.TAG_NAME, 'time')
                 post_date = time_element.get_attribute('datetime')
+                if not post_date:
+                    return None
             except:
-                post_date = ""
+                return None
 
             # Engagement metrics
             try:
@@ -424,85 +436,115 @@ class TwitterScraper:
         except:
             return 0
 
+    def find_missing_dates(self, filename, start_date, end_date):
+        # Find dates within the full start-end range that have no data in the CSV
+        scraped_dates = set()
+
+        if os.path.exists(filename):
+            try:
+                # Only read search_date column to avoid body-comma misparse issues
+                df = pd.read_csv(filename, usecols=['search_date'])
+                if not df.empty:
+                    scraped_dates = set(pd.to_datetime(df['search_date'], errors='coerce').dt.date)
+                    scraped_dates.discard(None)
+            except Exception as e:
+                print(f"Error reading CSV for missing dates: {e}")
+
+        check_start = start_date.date() if isinstance(start_date, datetime) else start_date
+        check_end = end_date.date() if isinstance(end_date, datetime) else end_date
+
+        missing = []
+        current = check_start
+        while current <= check_end:
+            if current not in scraped_dates:
+                missing.append(datetime(current.year, current.month, current.day))
+            current += timedelta(days=1)
+
+        return missing
+
+    def sort_csv(self, filename):
+        # Re-sort the CSV by post_date so gap-filled rows are in the right position
+        if not os.path.exists(filename):
+            return
+        try:
+            df = pd.read_csv(filename)
+            rows_before = len(df)
+            df['_parsed'] = pd.to_datetime(df['post_date'], errors='coerce')
+            bad_rows = df['_parsed'].isna().sum()
+            if bad_rows > 0:
+                print(f"WARNING: sort_csv function is dropping {bad_rows} rows with unparseable post_date")
+            df = df.dropna(subset=['_parsed'])
+            df = df.sort_values('_parsed').reset_index(drop=True)
+            df = df.drop(columns=['_parsed'])
+            df.to_csv(filename, index=False)
+            print(f"sort_csv: {rows_before} rows -> {len(df)} rows")
+        except Exception as e:
+            print(f"Error sorting CSV: {e}")
+
     def scrape_date_range(self, ticker, start_date, end_date, output_file):
-        # Scrape tweets for a date range, resuming from latest date in CSV if exists
-        # Check for existing CSV and resume from next day after latest date
-        latest_date = self.get_latest_date_from_csv(output_file)
+        # Scrape tweets for all missing dates in the range, then move to the latest date in the CSV
+        # This is only meant implemented due to X's API limits which cause some dates to not load properly
+        missing_dates = self.find_missing_dates(output_file, start_date, end_date)
 
-        if latest_date:
-            # Start from the day after the latest date in CSV
-            resume_date = latest_date + timedelta(days=1)
-            if resume_date > end_date:
-                print(f"CSV file {output_file} already contains data up to {latest_date.strftime('%Y-%m-%d')}")
-                print(f"No new dates to scrape (end_date is {end_date.strftime('%Y-%m-%d')})")
-                return []
+        if not missing_dates:
+            print(f"No missing dates for ${ticker}, skipping.")
+            return []
 
-            print(f"Found existing CSV with data up to {latest_date.strftime('%Y-%m-%d')}")
-            print(f"Resuming from {resume_date.strftime('%Y-%m-%d')}...")
-            current_date = resume_date
-        else:
-            print(f"No existing CSV found, starting fresh from {start_date.strftime('%Y-%m-%d')}")
-            current_date = start_date
+        print(f"Found {len(missing_dates)} missing date(s) for ${ticker}")
 
-        while current_date <= end_date:
-            print(f"Scraping ${ticker} for {current_date.strftime('%Y-%m-%d')}...")
-
-            tweets = self.search_tweets(ticker, current_date)
-
+        for i, gap_date in enumerate(missing_dates, 1):
+            print(f"[{i}/{len(missing_dates)}] Scraping ${ticker} for {gap_date.strftime('%Y-%m-%d')}...")
+            tweets = self.search_tweets(ticker, gap_date)
             for tweet in tweets:
                 tweet['ticker'] = ticker
-                tweet['search_date'] = current_date.strftime('%Y-%m-%d')
-
+                tweet['search_date'] = gap_date.strftime('%Y-%m-%d')
             print(f"Found {len(tweets)} tweets")
-
-            # Append only new tweets to CSV (does not overwrite existing data)
             self.save_to_csv(tweets, output_file)
+            time.sleep(random.uniform(5, 10))
 
-            current_date += timedelta(days=1)
-            time.sleep(random.uniform(5, 10))  # Increased randomized delay between searches
+        print(f"Completed all missing dates for ${ticker}")
 
-        return tweets
+        return []
 
     def save_to_csv(self, tweets, filename):
-        # Append new tweets to CSV file (does not overwrite existing data)
+        # Append new tweets to CSV file (append-only, no re-reading of existing data)
         if not tweets:
+            print(f"No tweets to save for {filename}")
             return
 
-        fieldnames = ['ticker', 'search_date', 'body', 'post_date', 'replies', 'retweets', 'likes']
-
-        # Check if file exists to determine if we need to write header
+        import csv
+        columns = ['ticker', 'search_date', 'body', 'post_date', 'replies', 'retweets', 'likes']
         file_exists = os.path.exists(filename)
 
         with open(filename, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=columns, extrasaction='ignore')
             if not file_exists:
                 writer.writeheader()
-            writer.writerows(tweets)
+            for tweet in tweets:
+                writer.writerow(tweet)
 
         print(f"Appended {len(tweets)} tweets to {filename}")
 
     def get_latest_date_from_csv(self, filename):
         # Get the latest search_date from an existing CSV file to resume scraping
         abs_path = os.path.abspath(filename)
-        print(f"Checking for existing CSV at: {abs_path}")
+        print(f"Checking for an existing CSV at: {abs_path}")
 
         if not os.path.exists(filename):
             print(f"File does not exist: {abs_path}")
             return None
 
         try:
-            df = pd.read_csv(filename)
+            df = pd.read_csv(filename, usecols=['search_date'])
             if df.empty:
-                print(f"CSV is empty")
+                print(f"The CSV is empty")
                 return None
 
-            # Use search_date if available, fall back to post_date for older CSVs
-            date_col = 'search_date' if 'search_date' in df.columns else 'post_date'
-            df['date_parsed'] = pd.to_datetime(df[date_col], errors='coerce')
+            df['date_parsed'] = pd.to_datetime(df['search_date'], errors='coerce')
             latest_date = df['date_parsed'].max()
 
             if pd.isna(latest_date):
-                print(f"Could not parse any dates from {date_col} column")
+                print(f"Could not parse any dates from search_date column")
                 return None
 
             # Return as datetime with just the date part
@@ -512,7 +554,8 @@ class TwitterScraper:
         except Exception as e:
             print(f"Error reading CSV file {filename}: {e}")
             return None
-
+        
+    # Used to check for existing tweets in CSV (prevent duplications)
     def load_existing_tweets(self, filename):
         # Load existing tweets from CSV file
         if not os.path.exists(filename):
@@ -533,24 +576,28 @@ class TwitterScraper:
             try:
                 self.driver.quit()
             except OSError:
-                pass  # Ignore Windows handle errors
+                pass  # Ignore the Windows handle errors
 
+# Return absolute path to the project's tweets folder.
+def get_project_tweets_dir():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(base_dir, "..", "tweets"))
 
-def check_ticker_complete(ticker, end_date, tweets_dir="../tweets"):
-    """Check if a ticker's CSV already has data up to the end date."""
+# Check if a ticker's CSV already has data up to the end date.
+def check_ticker_completion(ticker, end_date, tweets_dir=None):
+    if tweets_dir is None:
+        tweets_dir = get_project_tweets_dir()
     csv_path = os.path.join(tweets_dir, f"tweets_{ticker}.csv")
 
     if not os.path.exists(csv_path):
         return False, None
 
     try:
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, usecols=['search_date'])
         if df.empty:
             return False, None
 
-        # Use search_date if available, fall back to post_date for older CSVs
-        date_col = 'search_date' if 'search_date' in df.columns else 'post_date'
-        df['date_parsed'] = pd.to_datetime(df[date_col], errors='coerce')
+        df['date_parsed'] = pd.to_datetime(df['search_date'], errors='coerce')
         latest_date = df['date_parsed'].max()
 
         if pd.isna(latest_date):
@@ -571,27 +618,36 @@ def main():
 
     # All tickers to scrape (Half of the queries to avoid rate limits)
     TICKERS = [
-    # Tech 
+      # Technology
+        "NVDA", "AAPL", "MSFT", "AVGO", "ORCL",
+        # Communication Services
+        "GOOGL", "META",
+        # Consumer Discretionary
+        "AMZN", "TSLA", "HD",
+        # Financial Services
+        "BRK.B", "JPM", "V", "MA",
         # Healthcare
         "LLY", "JNJ", "UNH",
         # Consumer Staples
         "WMT", "PG",
+        # Energy
+        "XOM",
     ]
 
     START_DATE = datetime(2023, 10, 10)  # Starting date
     END_DATE = datetime(2025, 10, 10)    # End date
 
     # Ensure tweets directory exists
-    tweets_dir = "../tweets"
+    tweets_dir = get_project_tweets_dir()
     os.makedirs(tweets_dir, exist_ok=True)
 
     # Pre-check: filter out already completed tickers
-    print("Checking tweets folder for completed tickers...")
+    print("Checking tweets folder for completed tickers")
     tickers_to_scrape = []
     for ticker in TICKERS:
-        is_complete, latest_date = check_ticker_complete(ticker, END_DATE, tweets_dir)
+        is_complete, latest_date = check_ticker_completion(ticker, END_DATE, tweets_dir)
         if is_complete:
-            print(f"  ✓ {ticker}: COMPLETE (data up to {latest_date.strftime('%Y-%m-%d')})")
+            print(f"{ticker}: COMPLETED with data up to {latest_date.strftime('%Y-%m-%d')})")
         else:
             if latest_date:
                 print(f" {ticker}: Resume from {latest_date.strftime('%Y-%m-%d')}")
@@ -600,10 +656,10 @@ def main():
             tickers_to_scrape.append(ticker)
 
     if not tickers_to_scrape:
-        print("\nAll tickers are already complete!")
+        print("\nAll tickers are completed")
         return
 
-    print(f"\nTickers to scrape: {tickers_to_scrape}")
+    print(f"\nTickers left to scrape: {tickers_to_scrape}")
 
     scraper = TwitterScraper(USERNAME, PASSWORD)
 
@@ -616,7 +672,7 @@ def main():
         print(f"Starting to scrape tweets for {len(tickers_to_scrape)} tickers")
 
         for ticker in tickers_to_scrape:
-            output_file = f"{tweets_dir}/tweets_{ticker}.csv"
+            output_file = os.path.join(tweets_dir, f"tweets_{ticker}.csv")
             print(f"\n{'='*50}")
             print(f"Scraping ${ticker}")
             print(f"{'='*50}")
