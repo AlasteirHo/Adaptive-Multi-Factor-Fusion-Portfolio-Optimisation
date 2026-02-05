@@ -15,16 +15,16 @@ import os
 # Search terms used for each ticker
 # Important Consideration: GDELT API requires search keywords to be at least 4 characters
 TICKERS = {
-    # Tech
+    # Tech / Hardware
     "NVDA": ["Nvidia", "Nvidia stock", "Jensen Huang", "Nvidia GPU"],
     "AAPL": ["Apple Inc", "Apple stock", "iPhone Apple", "Tim Cook Apple"],
+    
+    # Tech / Software
+    "GOOGL": ["Google", "Alphabet Inc", "Sundar Pichai", "Google stock"],
+    "META": ["Meta Platforms", "Facebook", "Mark Zuckerberg", "Instagram Meta"],
     "MSFT": ["Microsoft", "Microsoft stock", "Satya Nadella", "Azure Microsoft"],
     "AVGO": ["Broadcom", "Broadcom stock", "Broadcom chip", "AVGO stock"],
     "ORCL": ["Oracle Corporation", "Oracle stock", "Oracle cloud", "Larry Ellison Oracle"],
-    
-    # Tech / Comms
-    "GOOGL": ["Google", "Alphabet Inc", "Sundar Pichai", "Google stock"],
-    "META": ["Meta Platforms", "Facebook", "Mark Zuckerberg", "Instagram Meta"],
     
     # Tech / Consumer
     "AMZN": ["Amazon", "Amazon stock", "Jeff Bezos Amazon", "AWS Amazon"],
@@ -54,10 +54,9 @@ TICKERS = {
 
 START_DATE = datetime(2023, 10, 10, 0, 0, 0)  # 12:00 AM on 10/10/2023
 END_DATE = datetime(2025, 10, 10, 23, 59, 59)  # 11:59 PM on 10/10/2025
-OUTPUT_DIR = "gdelt_news_data"
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Raw_Data", "gdelt_news_data")
 
-# Respecting the GDELT limits for queries, chunk into smaller periods
-CHUNK_DAYS = 14  # 2-week chunks 
+# GDELT API limits
 MAX_RECORDS = 250  # Max per query (limit to avoid overwhelming the API)
 RATE_LIMIT_DELAY = 3  # Seconds between requests (Prevent rate limiting)
 MAX_RETRIES = 3  # Number of retries for failed requests
@@ -114,49 +113,73 @@ def load_existing_data(ticker: str, output_dir: str) -> tuple:
 
                 # Gets unique dates that have been scraped
                 scraped_dates = set(df['date'].dt.date.dropna())
-                print(f"  [LOADED] Found {len(df)} existing articles ({len(scraped_dates)} unique dates)")
+                print(f" [LOADED] Found {len(df)} existing articles ({len(scraped_dates)} unique dates)")
                 return df, scraped_dates
         except Exception as e:
-            print(f"  [ERROR] Could not load existing CSV data: {e}")
+            print(f" [ERROR] Could not load existing CSV data: {e}")
 
     return pd.DataFrame(), set()
 
-# Filter out date chunks that have already been fully scraped, resuming from latest date.
-def get_unscraped_chunks(date_chunks: list, scraped_dates: set) -> list:
+# Find all gap ranges that need to be scraped (dates without any articles).
+def get_gap_ranges(start_date: datetime, end_date: datetime, scraped_dates: set) -> list:
     if not scraped_dates:
-        # No existing data, return all chunks
-        return date_chunks
+        # No existing data, return full range
+        return [(start_date, end_date)]
 
-    # Find the latest scraped date and resume from the next day
-    latest_scraped = max(scraped_dates)
-    resume_date = latest_scraped + timedelta(days=1)
-    print(f"[RESUMING] Latest scraped date: {latest_scraped}, resuming from: {resume_date}")
+    # Generate all expected dates in range
+    all_dates = set()
+    current = start_date.date()
+    end = end_date.date()
+    while current <= end:
+        all_dates.add(current)
+        current += timedelta(days=1)
 
-    unscraped = []
-    for chunk_start, chunk_end in date_chunks:
-        # Only include chunks that start on or after the resume date
-        # Or chunks that contain the resume date
-        if chunk_end.date() >= resume_date:
-            # Adjust chunk_start if it's before resume_date
-            if chunk_start.date() < resume_date:
-                adjusted_start = datetime.combine(resume_date, chunk_start.time())
-                unscraped.append((adjusted_start, chunk_end))
-            else:
-                unscraped.append((chunk_start, chunk_end))
+    # Find missing dates
+    missing_dates = sorted(all_dates - scraped_dates)
 
-    return unscraped
+    if not missing_dates:
+        return []
+
+    # Group consecutive missing dates into ranges
+    gap_ranges = []
+    gap_start = missing_dates[0]
+    gap_end = missing_dates[0]
+
+    for date in missing_dates[1:]:
+        if date == gap_end + timedelta(days=1):
+            gap_end = date
+        else:
+            # Convert to datetime for consistency
+            gap_ranges.append((
+                datetime.combine(gap_start, datetime.min.time()),
+                datetime.combine(gap_end, datetime.max.time())
+            ))
+            gap_start = date
+            gap_end = date
+
+    # Add the last gap
+    gap_ranges.append((
+        datetime.combine(gap_start, datetime.min.time()),
+        datetime.combine(gap_end, datetime.max.time())
+    ))
+
+    print(f"[GAPS] Found {len(gap_ranges)} gap range(s) totaling {len(missing_dates)} days")
+    return gap_ranges
 
 # Fetch news articles for a single ticker within the date range.
 def fetch_news_for_ticker(ticker: str, keywords: list, start: datetime, end: datetime) -> pd.DataFrame:
     gd = GdeltDoc()
     all_articles = []
-    
+
+    # GDELT API end_date is exclusive, so add 1 day to include the end date
+    api_end_date = end + timedelta(days=1)
+
     for keyword in keywords:
         try:
             f = Filters(
                 keyword=keyword,
                 start_date=start.strftime("%Y-%m-%d"),
-                end_date=end.strftime("%Y-%m-%d"),
+                end_date=api_end_date.strftime("%Y-%m-%d"),
                 num_records=MAX_RECORDS,
                 language="English"
             )
@@ -210,34 +233,24 @@ def filter_reputable_sources(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-# Generate list of (start, end) date tuples.
-def generate_date_chunks(start: datetime, end: datetime, chunk_days: int) -> list:
-    chunks = []
-    current = start
-    while current < end:
-        chunk_end = min(current + timedelta(days=chunk_days), end)
-        chunks.append((current, chunk_end))
-        current = chunk_end + timedelta(days=1)
-    return chunks
-
-# Scrape all news for a single ticker across all date chunks, skipping already scraped data.
-def scrape_ticker(ticker: str, keywords: list, date_chunks: list, output_dir: str) -> pd.DataFrame:
+# Scrape all news for a single ticker, filling in any gaps in the data.
+def scrape_ticker(ticker: str, keywords: list, start_date: datetime, end_date: datetime, output_dir: str) -> pd.DataFrame:
     print(f"\n{'='*50}")
     print(f"Processing: {ticker}")
     print(f"Keywords: {keywords}")
     print(f"{'='*50}")
-    
+
     # Load existing data
     existing_df, scraped_dates = load_existing_data(ticker, output_dir)
-    
-    # Filter out already scraped chunks
-    unscraped_chunks = get_unscraped_chunks(date_chunks, scraped_dates)
-    
-    if not unscraped_chunks:
-        print(f"  [SKIPPING] All the date chunks already scraped for {ticker}")
+
+    # Find all gap ranges that need scraping
+    gap_ranges = get_gap_ranges(start_date, end_date, scraped_dates)
+
+    if not gap_ranges:
+        print(f" [COMPLETE] No gaps found for {ticker}")
         return existing_df
-    
-    print(f"  [INFO] {len(unscraped_chunks)}/{len(date_chunks)} chunks need scraping")
+
+    print(f" [INFO] {len(gap_ranges)} gap range(s) to scrape")
     
     # Start with existing data and track existing URLs/headlines
     all_data = existing_df.copy() if not existing_df.empty else pd.DataFrame()
@@ -252,10 +265,12 @@ def scrape_ticker(ticker: str, keywords: list, date_chunks: list, output_dir: st
         if headline_col in all_data.columns:
             existing_headlines = set(all_data[headline_col].dropna().str.strip())
     
-    for i, (chunk_start, chunk_end) in enumerate(unscraped_chunks):
-        print(f"\n  Chunk {i+1}/{len(unscraped_chunks)}: {chunk_start.date()} → {chunk_end.date()}")
-        
-        chunk_df = fetch_news_for_ticker(ticker, keywords, chunk_start, chunk_end)
+    for i, (gap_start, gap_end) in enumerate(gap_ranges):
+        # Display the actual API search dates (end_date + 1 day since GDELT is exclusive)
+        api_end_date = gap_end + timedelta(days=1)
+        print(f"\n Gap {i+1}/{len(gap_ranges)}: {gap_start.date()} to {api_end_date.date()}")
+
+        chunk_df = fetch_news_for_ticker(ticker, keywords, gap_start, gap_end)
         if len(chunk_df) > 0:
             # Filter out articles with duplicate URLs or headlines BEFORE adding
             headline_col = 'title' if 'title' in chunk_df.columns else 'headline'
@@ -334,12 +349,12 @@ def clean_and_save(df: pd.DataFrame, ticker: str, output_dir: str) -> None:
         before_count = len(df)
         df = df.drop_duplicates(subset=['headline'], keep='first')
         if before_count != len(df):
-            print(f"  [DEDUP] Removed {before_count - len(df)} duplicate headlines")
+            print(f"[DEDUP] Removed {before_count - len(df)} duplicate headlines")
     
     # Save
     filepath = os.path.join(output_dir, f"{ticker}_news.csv")
     df.to_csv(filepath, index=False)
-    print(f"\n  ✓ Saved {len(df)} unique articles → {filepath}")
+    print(f"\nSaved {len(df)} unique articles to {filepath}")
 
 
 def main():
@@ -351,19 +366,14 @@ def main():
     print(f"Tickers: {list(TICKERS.keys())}")
     print(f"Output directory: {OUTPUT_DIR}/")
     print("="*60)
-    
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    date_chunks = generate_date_chunks(START_DATE, END_DATE, CHUNK_DAYS)
-    print(f"Generated {len(date_chunks)} date chunks ({CHUNK_DAYS}-day intervals)")
-    
-    # Collect news for each ticker
-    all_data = []
+
+    # Scrape news for each ticker, automatically filling any gaps
     for ticker, keywords in TICKERS.items():
-        df = scrape_ticker(ticker, keywords, date_chunks, OUTPUT_DIR)
+        df = scrape_ticker(ticker, keywords, START_DATE, END_DATE, OUTPUT_DIR)
         clean_and_save(df, ticker, OUTPUT_DIR)
-        if not df.empty:
-            all_data.append(df)
-    
+
     print(f"\n{'='*60}")
     print("Scraping has been completed")
     print("="*60)

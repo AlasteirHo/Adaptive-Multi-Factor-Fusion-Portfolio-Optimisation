@@ -396,9 +396,11 @@ class TwitterScraper:
             # Timestamp - skip tweet if no valid date found
             try:
                 time_element = tweet_element.find_element(By.TAG_NAME, 'time')
-                post_date = time_element.get_attribute('datetime')
-                if not post_date:
+                raw_date = time_element.get_attribute('datetime')
+                if not raw_date:
                     return None
+                # Reformat to consistent ISO 8601 with timezone offset (e.g. 2024-10-13T17:23:08+00:00)
+                post_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')).strftime('%Y-%m-%dT%H:%M:%S+00:00')
             except:
                 return None
 
@@ -581,7 +583,7 @@ class TwitterScraper:
 # Return absolute path to the project's tweets folder.
 def get_project_tweets_dir():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.abspath(os.path.join(base_dir, "..", "tweets"))
+    return os.path.abspath(os.path.join(base_dir, "..", "Raw_Data/Tweets"))
 
 # Check if a ticker's CSV already has data up to the end date.
 def check_ticker_completion(ticker, end_date, tweets_dir=None):
