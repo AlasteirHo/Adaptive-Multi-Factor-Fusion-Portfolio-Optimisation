@@ -35,7 +35,8 @@ Major S&P 500 stocks across 7 sectors:
 - **Web Scraping:** Selenium, undetected-chromedriver, GDELT API
 - **Visualization:** Matplotlib, Jupyter Notebook
 
-## Project Structure
+## Project Structure*
+*Not final: Proposed structure
 
 ```
 FYP/
@@ -131,8 +132,8 @@ Run the Jupyter notebooks in `Pipeline/`:
 |------|-------------|
 | `performance_metrics.csv` | Strategy performance summary metrics |
 | `portfolio_performance.csv` | Daily portfolio value tracking |
-| `trade_log.csv` | Complete trading history with buy/sell actions |
-| `price_based_*.csv` | Price-based strategy outputs |
+| `strategy_trade_log.csv` | Complete trading history with buy/sell actions |
+| `price_based_trade_log*.csv` | Price-based strategy buy/sell |
 
 ## Models
 
@@ -173,6 +174,7 @@ The model evaluation notebooks are located in `model/`:
 ## License
 
 This project is part of my Final Year Project at the University of Greenwich.
+
 
 
 
