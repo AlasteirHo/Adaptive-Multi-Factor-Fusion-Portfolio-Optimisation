@@ -1,7 +1,6 @@
 """
 GDELT News Scraper for Stock Sentiment Analysis
 Scrapes news headlines related to specified stock tickers using the GDELT API.
-Date range: 2023-10-10 to 2025-10-10
 By Alasteir Ho
 
 """
@@ -19,14 +18,14 @@ TICKERS = {
     "NVDA": ["Nvidia", "Nvidia stock", "Jensen Huang", "Nvidia GPU"],
     "AAPL": ["Apple Inc", "Apple stock", "iPhone Apple", "Tim Cook Apple"],
     
-    # Tech / Software
+    # # # Tech / Software
     "GOOGL": ["Google", "Alphabet Inc", "Sundar Pichai", "Google stock"],
     "META": ["Meta Platforms", "Facebook", "Mark Zuckerberg", "Instagram Meta"],
     "MSFT": ["Microsoft", "Microsoft stock", "Satya Nadella", "Azure Microsoft"],
     "AVGO": ["Broadcom", "Broadcom stock", "Broadcom chip", "AVGO stock"],
     "ORCL": ["Oracle Corporation", "Oracle stock", "Oracle cloud", "Larry Ellison Oracle"],
     
-    # Tech / Consumer
+    # # Tech / Consumer
     "AMZN": ["Amazon", "Amazon stock", "Jeff Bezos Amazon", "AWS Amazon"],
     "TSLA": ["Tesla", "Tesla stock", "Elon Musk Tesla", "Tesla EV"],
     
@@ -52,13 +51,13 @@ TICKERS = {
     "HD": ["Home Depot", "Home Depot stock", "Home Depot retail"],
 }
 
-START_DATE = datetime(2023, 10, 10, 0, 0, 0)  # 12:00 AM on 10/10/2023
-END_DATE = datetime(2025, 10, 10, 23, 59, 59)  # 11:59 PM on 10/10/2025
+START_DATE = datetime(2023, 10, 1, 0, 0, 0)  # 12:00 AM on 10/10/2025
+END_DATE = datetime(2026,2, 24, 23, 59, 59)  # 11:59 PM on 12/31/2025
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Raw_Data", "gdelt_news_data")
 
 # GDELT API limits
 MAX_RECORDS = 250  # Max per query (limit to avoid overwhelming the API)
-RATE_LIMIT_DELAY = 3  # Seconds between requests (Prevent rate limiting)
+RATE_LIMIT_DELAY = 3  # Seconds between requests (Prevent rate limiting)7877
 MAX_RETRIES = 3  # Number of retries for failed requests
 
 # Reputable financial news sources to filter by
@@ -119,52 +118,6 @@ def load_existing_data(ticker: str, output_dir: str) -> tuple:
             print(f" [ERROR] Could not load existing CSV data: {e}")
 
     return pd.DataFrame(), set()
-
-# Find all gap ranges that need to be scraped (dates without any articles).
-def get_gap_ranges(start_date: datetime, end_date: datetime, scraped_dates: set) -> list:
-    if not scraped_dates:
-        # No existing data, return full range
-        return [(start_date, end_date)]
-
-    # Generate all expected dates in range
-    all_dates = set()
-    current = start_date.date()
-    end = end_date.date()
-    while current <= end:
-        all_dates.add(current)
-        current += timedelta(days=1)
-
-    # Find missing dates
-    missing_dates = sorted(all_dates - scraped_dates)
-
-    if not missing_dates:
-        return []
-
-    # Group consecutive missing dates into ranges
-    gap_ranges = []
-    gap_start = missing_dates[0]
-    gap_end = missing_dates[0]
-
-    for date in missing_dates[1:]:
-        if date == gap_end + timedelta(days=1):
-            gap_end = date
-        else:
-            # Convert to datetime for consistency
-            gap_ranges.append((
-                datetime.combine(gap_start, datetime.min.time()),
-                datetime.combine(gap_end, datetime.max.time())
-            ))
-            gap_start = date
-            gap_end = date
-
-    # Add the last gap
-    gap_ranges.append((
-        datetime.combine(gap_start, datetime.min.time()),
-        datetime.combine(gap_end, datetime.max.time())
-    ))
-
-    print(f"[GAPS] Found {len(gap_ranges)} gap range(s) totaling {len(missing_dates)} days")
-    return gap_ranges
 
 # Fetch news articles for a single ticker within the date range.
 def fetch_news_for_ticker(ticker: str, keywords: list, start: datetime, end: datetime) -> pd.DataFrame:
@@ -233,85 +186,101 @@ def filter_reputable_sources(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-# Scrape all news for a single ticker, filling in any gaps in the data.
+# Scrape all news for a single ticker, chunked by day to avoid hitting the 250-record API cap.
 def scrape_ticker(ticker: str, keywords: list, start_date: datetime, end_date: datetime, output_dir: str) -> pd.DataFrame:
     print(f"\n{'='*50}")
     print(f"Processing: {ticker}")
     print(f"Keywords: {keywords}")
     print(f"{'='*50}")
 
-    # Load existing data
+    # Load existing data for deduplication
     existing_df, scraped_dates = load_existing_data(ticker, output_dir)
 
-    # Find all gap ranges that need scraping
-    gap_ranges = get_gap_ranges(start_date, end_date, scraped_dates)
-
-    if not gap_ranges:
-        print(f" [COMPLETE] No gaps found for {ticker}")
-        return existing_df
-
-    print(f" [INFO] {len(gap_ranges)} gap range(s) to scrape")
-    
-    # Start with existing data and track existing URLs/headlines
-    all_data = existing_df.copy() if not existing_df.empty else pd.DataFrame()
-    
     # Build sets of existing URLs and headlines to check against
     existing_urls = set()
     existing_headlines = set()
-    if not all_data.empty:
-        if 'url' in all_data.columns:
-            existing_urls = set(all_data['url'].dropna().str.strip())
-        headline_col = 'title' if 'title' in all_data.columns else 'headline'
-        if headline_col in all_data.columns:
-            existing_headlines = set(all_data[headline_col].dropna().str.strip())
-    
-    for i, (gap_start, gap_end) in enumerate(gap_ranges):
-        # Display the actual API search dates (end_date + 1 day since GDELT is exclusive)
-        api_end_date = gap_end + timedelta(days=1)
-        print(f"\n Gap {i+1}/{len(gap_ranges)}: {gap_start.date()} to {api_end_date.date()}")
+    if not existing_df.empty:
+        if 'url' in existing_df.columns:
+            existing_urls = set(existing_df['url'].dropna().str.strip())
+        headline_col = 'title' if 'title' in existing_df.columns else 'headline'
+        if headline_col in existing_df.columns:
+            existing_headlines = set(existing_df[headline_col].dropna().str.strip())
 
-        chunk_df = fetch_news_for_ticker(ticker, keywords, gap_start, gap_end)
+    if scraped_dates:
+        latest_date = max(scraped_dates)
+        print(f" [INFO] CSV has data up to {latest_date}; already-scraped dates in range will be skipped")
+
+    # Split the date range into daily chunks, skipping dates already in the CSV
+    day_ranges = []
+    current = start_date
+    while current <= end_date:
+        if current.date() not in scraped_dates:
+            day_ranges.append(current)
+        current += timedelta(days=1)
+
+    if not day_ranges:
+        print(f" [SKIP] {ticker} is already up to date for the requested date range")
+        return existing_df if not existing_df.empty else pd.DataFrame()
+
+    print(f" [INFO] {len(day_ranges)} day(s) to scrape")
+
+    all_data = existing_df.copy() if not existing_df.empty else pd.DataFrame()
+
+    for i, day in enumerate(day_ranges):
+        print(f"\n Day {i+1}/{len(day_ranges)}: {day.date()}")
+        chunk_df = fetch_news_for_ticker(ticker, keywords, day, day)
+
         if len(chunk_df) > 0:
+            # Normalise GDELT column names before dedup/concat
+            gdelt_rename = {}
+            if 'title' in chunk_df.columns:
+                gdelt_rename['title'] = 'headline'
+            if 'seendate' in chunk_df.columns:
+                gdelt_rename['seendate'] = 'date'
+            if 'domain' in chunk_df.columns:
+                gdelt_rename['domain'] = 'source'
+            if gdelt_rename:
+                chunk_df = chunk_df.rename(columns=gdelt_rename)
+
             # Filter out articles with duplicate URLs or headlines BEFORE adding
-            headline_col = 'title' if 'title' in chunk_df.columns else 'headline'
+            headline_col = 'headline'
             original_count = len(chunk_df)
-            
+
             # Filter by URL
             if 'url' in chunk_df.columns:
                 chunk_df = chunk_df[~chunk_df['url'].fillna('').str.strip().isin(existing_urls)]
-            
+
             # Filter by headline
             if headline_col in chunk_df.columns:
                 chunk_df = chunk_df[~chunk_df[headline_col].fillna('').str.strip().isin(existing_headlines)]
-            
+
             # Also remove duplicates within the chunk itself
             chunk_df = chunk_df.drop_duplicates(subset=['url'], keep='first')
             if headline_col in chunk_df.columns:
                 chunk_df = chunk_df.drop_duplicates(subset=[headline_col], keep='first')
-            
+
             filtered_count = len(chunk_df)
             if original_count != filtered_count:
                 print(f"[FILTERED] {original_count - filtered_count} duplicates skipped")
-            
+
             if len(chunk_df) > 0:
-                # Add new URLs and headlines to tracking sets
+                # Track new URLs/headlines for subsequent chunks
                 if 'url' in chunk_df.columns:
                     existing_urls.update(chunk_df['url'].dropna().str.strip())
                 if headline_col in chunk_df.columns:
                     existing_headlines.update(chunk_df[headline_col].dropna().str.strip())
-                
-                # Merge chunk with all data
+
                 if not all_data.empty:
                     all_data = pd.concat([all_data, chunk_df], ignore_index=True)
                 else:
                     all_data = chunk_df.copy()
-                
-                # Save after each chunk
+
+                # Save after each day
                 clean_and_save(all_data, ticker, output_dir)
-                print(f"[SAVED] {len(all_data)} articles after chunk {i+1}")
-        
+                print(f"[SAVED] {len(all_data)} articles after day {i+1}")
+
         time.sleep(RATE_LIMIT_DELAY)
-    
+
     return all_data if not all_data.empty else pd.DataFrame()
 
 # Clean dataframe and save to CSV
@@ -369,7 +338,7 @@ def main():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Scrape news for each ticker, automatically filling any gaps
+    # Scrape news for each ticker
     for ticker, keywords in TICKERS.items():
         df = scrape_ticker(ticker, keywords, START_DATE, END_DATE, OUTPUT_DIR)
         clean_and_save(df, ticker, OUTPUT_DIR)
