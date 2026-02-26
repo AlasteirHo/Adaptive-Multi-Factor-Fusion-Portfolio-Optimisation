@@ -1,6 +1,6 @@
-# Adaptive Fusion for Multi-Source Stock Portfolio Optimization
+# Adaptive Fusion for Multi-Source Sentiment Analysis
 
-An adaptive fusion approach to financial sentiment analysis that integrates multiple data sources (news articles and social media) and technical indicators to predict stock price direction and optimize an investment portfolio.
+An adaptive fusion approach to financial sentiment analysis that integrates multiple data sources (news articles and social media) with a custom-trained NLP model to predict stock price direction and optimize an investment portfolio.
 
 **Author:** Alasteir Ho
 **Institution:** University of Greenwich (Final Year Project)
@@ -9,79 +9,110 @@ An adaptive fusion approach to financial sentiment analysis that integrates mult
 
 This system performs the following workflow:
 
-1. **Data Collection** - Scrapes news articles from GDELT API and Twitter/X posts for major stocks
-2. **Preprocessing & Labelling** - Cleans and labels data for sentiment analysis
-3. **Portfolio Optimization** - Implements news-aware and price-aware portfolio strategies with backtesting
+1. **Data Collection** - Scrapes news articles from the GDELT API and tweets from Twitter/X for major S&P 500 stocks
+2. **Preprocessing & Labelling** - Cleans, deduplicates, and labels data using a custom FIN-RoBERTa sentiment model
+3. **Sentiment Aggregation** - Aggregates labelled data into daily sentiment scores per ticker
+4. **Portfolio Optimization** - Implements an adaptive fusion strategy that combines news and tweet sentiment signals via a learned attention mechanism, with full backtesting
 
 ## Supported Stocks
 
-Major S&P 500 stocks across 7 sectors:
+20 major S&P 500 stocks across 7 sectors:
 
 | Sector | Tickers |
 |--------|---------|
 | Technology | NVDA, AAPL, MSFT, AVGO, ORCL |
 | Communication Services | GOOGL, META |
 | Consumer Discretionary | AMZN, TSLA, HD |
-| Financial Services | BRK.B, JPM, V, MA |
+| Financial Services | BRK-B, JPM, V, MA |
 | Healthcare | JNJ, LLY, UNH |
 | Consumer Staples | WMT, PG |
 | Energy | XOM |
 
+**Data period:** October 2, 2023 - October 9, 2025 (~502 trading days)
+
 ## Technology Stack
 
-- **Languages:** Python 3.12+
-- **ML/NLP:** scikit-learn, Transformers (FinBERT/FinRoBERTa)
-- **Data handling:** Pandas, NumPy, yfinance
+- **Languages:** Python 3.13+
+- **ML/NLP:** PyTorch, Transformers (FIN-RoBERTa), scikit-learn
+- **Portfolio Optimisation:** cvxpy
+- **Data Handling:** Pandas, NumPy, yfinance
 - **Web Scraping:** Selenium, undetected-chromedriver, GDELT API
-- **Visualization:** Matplotlib, Jupyter Notebook
+- **Visualisation:** Matplotlib, Jupyter Notebook
 
-## Project Structure*
-*Not final: Proposed structure
+## Project Structure
 
 ```
 FYP/
-├── Pipeline/                              # Main analysis and modeling
-│   ├── News_aware_PO.ipynb               # News-aware portfolio optimization
-│   └── Price_aware_PO copy.ipynb         # Price-aware portfolio optimization
+├── scrapers/                                # Data collection scripts
+│   ├── GDELTscraper.py                      # GDELT news API scraper
+│   └── twitter_scraper.py                   # Twitter/X scraper (Selenium)
 │
-├── scrapers/                              # Data collection scripts
-│   ├── GDELTscraper.py                   # GDELT news API scraper
-│   ├── twitter_scraper.py                # Twitter/X scraper (primary)
-│   └── twitter_scraper2.py               # Twitter/X scraper (Second X account after rate limited)
+├── preprocessing/                           # Data preprocessing, EDA & labelling
+│   ├── news_eda.ipynb                       # News exploratory data analysis
+│   ├── news_preprocessing_labelling.ipynb   # News cleaning, labelling & aggregation
+│   ├── tweets_eda.ipynb                     # Tweets exploratory data analysis
+│   └── tweets_preprocessing_labelling.ipynb # Tweets cleaning, labelling & aggregation
+│   
 │
-├── preprocessing/                         # Data preprocessing & labelling
-│   ├── news_preprocessing_labelling.ipynb    # News data preprocessing
-│   └── tweets_preprocessing_labelling.ipynb  # Tweets preprocessing & labelling
+├── Sentiment_Model/                         # Sentiment model training & evaluation
+│   ├── model_evaluation.ipynb               # FIN-RoBERTa vs FinBERT comparison
+│   └── RoBERTa-Train/
+│       ├── train.ipynb                      # Custom FIN-RoBERTa fine-tuning
+│       └── semeval-2017-task-5-subtask-2/   # SemEval training data
 │
-├── output/                                # Back-testing results
-│   ├── performance_metrics.csv           # Strategy performance metrics
-│   ├── portfolio_performance.csv         # Portfolio daily performance
-│   ├── price_based_performance_metrics.csv
-│   ├── price_based_portfolio_performance.csv
-│   ├── price_based_trade_log.csv
-│   └── trade_log.csv                     # Trading history
 │
-├── tweets_labelled/                       # Labelled tweet data
-├── tweets_*.csv                           # Raw scraped tweets per ticker
-├── .env                                   # Environment variables
-└── .gitignore                             # Git ignore file
+├── portfolio_optimizer/                     # Adaptive Fusion portfolio strategy
+│   ├── Adaptive_Fusion_POC.ipynb            # Main adaptive fusion notebook (Proof Of Concept)
+│   ├── fusion_network.pt                    # Trained PyTorch fusion network weights 
+│   └── outputs/                             # Backtest results & plots
+│       ├── 1_nav_comparison.png
+│       ├── 2_drawdown_comparison.png
+│       ├── 3_weight_evolution.png
+│       ├── 4_attention_weights.png
+│       ├── 5_factor_attribution.png
+│       ├── adaptive_fusion_trade_log.csv
+│       └── metrics_summary.csv
+│
+├── Raw_Data/                                # Raw scraped data
+│   ├── gdelt_news_data/                     # Raw GDELT news per ticker
+│   │   └── <TICKER>_news.csv
+│   └── Tweets/                              # Raw scraped tweets per ticker
+│       └── tweets_<TICKER>.csv
+│
+├── Processed_Data/                          # Aggregated daily sentiment data
+│   ├── news_sentiment_daily/                # Daily news sentiment scores per ticker
+│   │   └── <TICKER>_news_sentiment_daily.csv
+│   └── tweets_sentiment_daily/              # Daily tweet sentiment scores per ticker
+│       └── <TICKER>_tweets_sentiment_daily.csv
+│
+├── requirements.txt                         # Python dependencies
+├── .env                                     # Environment variables
+└── .gitignore
 ```
+
+### Processed Data Schema
+
+**`news_sentiment_daily/`** columns: `date, open_price, close_price, avg_sentiment`
+
+**`tweets_sentiment_daily/`** columns: `date, avg_sentiment`
+
+Ticker from filename: `{TICKER}_{source}_sentiment_daily.csv`
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - Anaconda or Miniconda (recommended)
 - Chrome browser (for Twitter scraping)
-- CUDA-capable GPU with 8GB+ VRAM (optional, for faster inference)
+- Nvidia GPU with 8 GB+ VRAM and Tensor Core (optional, for faster training and inference)
 
 ### Setup
 
 1. **Create conda environment (recommended):**
    ```bash
-   conda create -n project python=<python_version>
-   conda activate project
+   conda create -n fyp python=3.13
+   conda activate fyp
    ```
 
    Alternatively, use venv:
@@ -96,7 +127,13 @@ FYP/
    pip install -r requirements.txt
    ```
 
-3. **Configure environment variables:**
+3. **Authenticate with Hugging Face:**
+   ```bash
+   huggingface-cli login
+   ```
+   Required to download model weights. Create a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+
+4. **Configure environment variables:**
 
    Create a `.env` file with your Twitter credentials:
    ```
@@ -110,36 +147,30 @@ FYP/
 ```bash
 python scrapers/GDELTscraper.py
 ```
+Outputs to `Raw_Data/gdelt_news_data/`.
 
 ### Step 2: Collect Twitter Data
 ```bash
 python scrapers/twitter_scraper.py
 ```
+Outputs to `Raw_Data/Tweets/`.
 
-### Step 3: Preprocess Data
+### Step 3: Preprocess & Label Data
 Run the Jupyter notebooks in `preprocessing/`:
-- `news_preprocessing_labelling.ipynb` - Process and label news data
-- `tweets_preprocessing_labelling.ipynb` - Process and label tweet data
+- `news_preprocessing_labelling.ipynb` - Clean and label news data, aggregate to daily scores
+- `tweets_preprocessing_labelling.ipynb` - Clean and label tweet data, aggregate to daily scores
 
 ### Step 4: Portfolio Optimization
-Run the Jupyter notebooks in `Pipeline/`:
-- `News_aware_PO.ipynb` - News sentiment-aware portfolio optimization
-- `Price_aware_PO copy.ipynb` - Price-based portfolio optimization
+Run the notebook in `portfolio_optimizer/`:
+- `Adaptive_Fusion_POC.ipynb` - Adaptive fusion strategy combining news and tweet sentiment via learned attention, with full backtesting
 
-## Output Files
-
-| File | Description |
-|------|-------------|
-| `performance_metrics.csv` | Strategy performance summary metrics |
-| `portfolio_performance.csv` | Daily portfolio value tracking |
-| `strategy_trade_log.csv` | Complete trading history with buy/sell actions |
-| `price_based_trade_log*.csv` | Price-based strategy buy/sell |
+Early strategy iterations (news-aware, price-aware) are in `Strategy/Initial_S1toS3.ipynb`.
 
 ## Models
 
 ### Custom FIN-RoBERTa Model
 
-We trained a custom RoBERTa-based model for financial sentiment analysis:
+A RoBERTa-based model fine-tuned for financial sentiment analysis on domain-specific corpora:
 
 - **Model:** [alasteirho/FIN-RoBERTa-Custom](https://huggingface.co/alasteirho/FIN-RoBERTa-Custom)
 - **Labels:** negative, neutral, positive
@@ -148,33 +179,39 @@ We trained a custom RoBERTa-based model for financial sentiment analysis:
 
 | Dataset | Description |
 |---------|-------------|
-| [takala/financial_phrasebank](https://huggingface.co/datasets/takala/financial_phrasebank) | Financial news sentences with sentiment labels (sentences_allagree - 50% annotator agreement, 80:20 split) |
+| [takala/financial_phrasebank](https://huggingface.co/datasets/takala/financial_phrasebank) | Financial news sentences with sentiment labels (sentences_allagree, 80:20 split) |
 | [zeroshot/twitter-financial-news-sentiment](https://huggingface.co/datasets/zeroshot/twitter-financial-news-sentiment) | Twitter financial news sentiment dataset |
 | [pauri32/fiqa-2018](https://huggingface.co/datasets/pauri32/fiqa-2018) | Financial Opinion Mining and Question Answering dataset |
 | [SemEval-2017 Task 5 Subtask 2](https://alt.qcri.org/semeval2017/task5/) | Fine-grained sentiment analysis on financial news headlines |
 
 #### Evaluation Dataset
 
-The model was evaluated on the [Financial PhraseBank](https://huggingface.co/datasets/takala/financial_phrasebank) dataset (sentences_allagree subset) which contains 2,264 sentences with 100% annotator agreement, ensuring high-quality ground truth labels.
+Evaluated on the [Financial PhraseBank](https://huggingface.co/datasets/takala/financial_phrasebank) dataset (`sentences_allagree` subset) - 2,264 sentences with 100% annotator agreement.
+
+#### Training Statistics
+
+| Metric | Value |
+|--------|-------|
+| GPU | NVIDIA GeForce RTX 5080 |
+| GPU Memory | 15.92 GB |
+| Training time | 166.4 s (2.77 min) |
+| VRAM used for training | 5.26 GB |
+| VRAM used for inference | 4.04 GB |
+| Evaluation time | 1.80 s |
 
 ### Model Evaluation
 
-The model evaluation notebooks are located in `model/`:
-- `finbert.ipynb` - FinBERT evaluation
-- `finroberta.ipynb` - Custom FIN-RoBERTa evaluation
+Model comparison notebooks are in `Sentiment_Model/`:
+- `model_evaluation.ipynb` - FIN-RoBERTa vs FinBERT evaluation on Financial PhraseBank
+- `RoBERTa-Train/train.ipynb` - Fine-tuning notebook
 
-## Features
+## Key Design Decisions
 
-- **Data Leakage Prevention:** Uses only t-1 data to predict future returns
+- **Data Leakage Prevention:** Only t-1 sentiment data is used to generate portfolio weights for day t
 - **Multiple Data Sources:** Financial news (GDELT) and social media (Twitter/X)
-- **Custom FIN-RoBERTa Model:** Domain-specific transformer model fine-tuned on financial text
-- **Backtesting Framework:** Daily mark-to-market with benchmark comparison
-- **Current Portfolio Strategies:** News-aware and price-aware optimization approaches
+- **Adaptive Fusion:** A PyTorch attention network learns to weight news vs tweet sentiment dynamically
+- **Backtesting:** Daily mark-to-market with benchmark comparison and drawdown analysis
 
 ## License
 
 This project is part of my Final Year Project at the University of Greenwich.
-
-
-
-
