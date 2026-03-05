@@ -51,8 +51,8 @@ TICKERS = {
     "HD": ["Home Depot", "Home Depot stock", "Home Depot retail"],
 }
 
-START_DATE = datetime(2023, 10, 1, 0, 0, 0)  # 12:00 AM on 10/10/2025
-END_DATE = datetime(2026,2, 24, 23, 59, 59)  # 11:59 PM on 12/31/2025
+START_DATE = datetime(2023,9, 1, 0, 0, 0)  # 12:00 AM on 10/10/2023
+END_DATE = datetime(2023,10, 1, 23, 59, 59)  # 11:59 PM on 12/31/2025
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Raw_Data", "gdelt_news_data")
 
 # GDELT API limits

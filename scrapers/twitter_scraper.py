@@ -50,7 +50,7 @@ class TwitterScraper:
         options.add_argument("--disable-web-security")
 
         # Use a persistent Chrome profile so the browser has history/cookies
-        # and doesn't look like a fresh bot instance each run
+        # and doesn't look like a fresh bot instance each run (Bot detection evasion)
         # Store profile outside OneDrive to avoid sync-related file locking
         profile_dir = os.path.join(os.path.expanduser("~"), ".twitter_scraper_profile")
         os.makedirs(profile_dir, exist_ok=True)
@@ -328,91 +328,94 @@ class TwitterScraper:
             search_input.send_keys(Keys.ENTER)
             time.sleep(random.uniform(3, 5))
 
-        # Click "Latest" tab to get chronological tweets
-        latest_selectors = [
-            'a[href*="f=live"]',  # Original selector
-            'a[role="tab"]:has-text("Latest")',  # Tab with "Latest" text
-            '//span[text()="Latest"]/ancestor::a[@role="tab"]',  # XPath fallback
-            '//div[@role="tablist"]//span[contains(text(), "Latest")]/ancestor::a',  # Another XPath
-            'a[aria-label*="Latest"]',  # Aria label
-        ]
+        # Search lands on the "Top" tab by default
 
-        clicked = False
+    def click_latest_tab(self):
+        # Switch from Top tab to Latest tab
+        latest_selectors = [
+            'a[href*="f=live"]',
+            '//span[text()="Latest"]/ancestor::a[@role="tab"]',
+            '//div[@role="tablist"]//span[contains(text(), "Latest")]/ancestor::a',
+            'a[aria-label*="Latest"]',
+        ]
         for selector in latest_selectors:
             try:
-                if selector.startswith('//'):  # XPath selector
-                    latest_tab = WebDriverWait(self.driver, 5).until(
+                if selector.startswith('//'):
+                    tab = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
-                else:  # CSS selector
-                    latest_tab = WebDriverWait(self.driver, 5).until(
+                else:
+                    tab = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                     )
-                latest_tab.click()
+                tab.click()
                 print("Switched to Latest tab")
                 time.sleep(random.uniform(2, 4))
-                clicked = True
-                break
+                return True
             except Exception:
                 continue
+        print("Could not click Latest tab")
+        return False
 
-        if not clicked:
-            print("Could not click Latest tab with any selector - continuing with Top results")
-
-    def search_tweets(self, ticker, date, max_refresh_attempts=3, error_wait_minutes=10):
-        # Searches for tweets with ticker symbol on a specific date chunk
-        # Format: $AMD since:2025-10-10 until:2025-10-10
-        # X's 'since' is inclusive and 'until' is exclusive
-        # So to fetch tweets on a specific date, use since:date until:date+1
-        since_date = date.strftime("%Y-%m-%d")
-        until_date = (date + timedelta(days=1)).strftime("%Y-%m-%d")
-
-        query = f"${ticker} until:{until_date} since:{since_date}"
-
-        # Type the search query like a human
-        self.type_search_query(query)
-        time.sleep(random.uniform(2, 4))  # Randomized delay to appear more human
-
-        tweets_with_dollar = []
-
-        # Try to scrape tweets, refresh page if empty or not loaded
+    def _try_scrape(self, max_refresh_attempts=3, error_wait_minutes=10):
+        # Attempt to scrape tweets from the current tab, with refresh retries
         for attempt in range(max_refresh_attempts):
-            # Wait for tweets to load, refresh if none appear
             tweets_loaded = self.wait_for_tweets_to_load()
             if not tweets_loaded and attempt < max_refresh_attempts - 1:
                 print(f"Tweets not loading, refreshing page (attempt {attempt + 1}/{max_refresh_attempts})...")
                 self.driver.refresh()
                 time.sleep(random.uniform(3, 5))
                 continue
-            # Check for error message before scraping
+
             if self.check_for_error_message():
                 print(f"'Something went wrong' error found. Waiting {error_wait_minutes} minutes before retrying")
-                # Wait for the specified time (default 10 minutes)
                 for remaining in range(error_wait_minutes, 0, -1):
                     print(f"Waiting {remaining} minutes remaining", end='\r')
                     time.sleep(60)
-                print()  # New line after countdown
+                print()
                 print(f"Refreshing page after {error_wait_minutes} minutes")
                 self.driver.refresh()
                 time.sleep(5)
 
-                # Check again after refresh
                 if self.check_for_error_message():
-                    print(f"Error still occurs after waiting. Continuing to next date")
+                    print(f"Error still occurs after waiting. Continuing")
                     continue
 
-            tweets_with_dollar = self.scrape_tweets()
+            tweets = self.scrape_tweets()
+            if tweets:
+                return tweets
 
-            if tweets_with_dollar:
-                break
-
-            # No tweets found, refresh and retry
             if attempt < max_refresh_attempts - 1:
                 print(f"No posts found, refreshing page (attempt {attempt + 2}/{max_refresh_attempts})...")
                 self.driver.refresh()
                 time.sleep(3)
 
-        return tweets_with_dollar
+        return []
+
+    def search_tweets(self, ticker, date, max_refresh_attempts=3, error_wait_minutes=10):
+        # Searches for tweets with ticker symbol on a specific date chunk
+        # Tries Top tab first, falls back to Latest tab if no tweets found
+        since_date = date.strftime("%Y-%m-%d")
+        until_date = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        query = f"${ticker} until:{until_date} since:{since_date}"
+
+        # Type the search query (lands on Top tab by default)
+        self.type_search_query(query)
+        time.sleep(random.uniform(2, 4))
+
+        # Try Top tab first
+        print("Trying Top tab...")
+        tweets = self._try_scrape(max_refresh_attempts, error_wait_minutes)
+        if tweets:
+            return tweets
+
+        # No tweets in Top tab, fall back to Latest tab
+        print("No tweets in Top tab, switching to Latest...")
+        if self.click_latest_tab():
+            tweets = self._try_scrape(max_refresh_attempts, error_wait_minutes)
+
+        return tweets
     
 
 # ============ HTML text extraction ==============
@@ -598,6 +601,7 @@ class TwitterScraper:
             time.sleep(random.uniform(5, 10))
 
         print(f"Completed all missing dates for ${ticker}")
+        self.sort_csv(output_file)
 
         return []
 
@@ -690,31 +694,44 @@ def get_project_tweets_dir():
     return os.path.abspath(os.path.join(base_dir, "..", "Raw_Data/Tweets"))
 
 # Check if a ticker's CSV already has data up to the end date.
-def check_ticker_completion(ticker, end_date, tweets_dir=None):
+def check_ticker_completion(ticker, start_date, end_date, tweets_dir=None):
     if tweets_dir is None:
         tweets_dir = get_project_tweets_dir()
     csv_path = os.path.join(tweets_dir, f"tweets_{ticker}.csv")
 
     if not os.path.exists(csv_path):
-        return False, None
+        return False, None, None
 
     try:
         df = pd.read_csv(csv_path, usecols=['search_date'])
         if df.empty:
-            return False, None
+            return False, None, None
 
-        df['date_parsed'] = pd.to_datetime(df['search_date'], errors='coerce')
-        latest_date = df['date_parsed'].max()
+        scraped_dates = set(pd.to_datetime(df['search_date'], errors='coerce').dt.date)
+        scraped_dates.discard(None)
 
-        if pd.isna(latest_date):
-            return False, None
+        if not scraped_dates:
+            return False, None, None
 
-        latest = datetime(latest_date.year, latest_date.month, latest_date.day)
-        # Complete if latest date >= end_date
-        return latest >= end_date, latest
+        latest = max(scraped_dates)
+        latest_dt = datetime(latest.year, latest.month, latest.day)
+
+        # Count missing dates in the full range
+        check_start = start_date.date() if isinstance(start_date, datetime) else start_date
+        check_end = end_date.date() if isinstance(end_date, datetime) else end_date
+
+        missing_count = 0
+        current = check_start
+        while current <= check_end:
+            if current not in scraped_dates:
+                missing_count += 1
+            current += timedelta(days=1)
+
+        # Complete only if every date in the range has data
+        return missing_count == 0, latest_dt, missing_count
     except Exception as e:
         print(f"Error checking {csv_path}: {e}")
-        return False, None
+        return False, None, None
 
 
 def main():
@@ -740,8 +757,8 @@ def main():
         "XOM",
     ]
 
-    START_DATE = datetime(2025, 12, 31)  # Starting date
-    END_DATE = datetime(2026,1 ,31)    # End date
+    START_DATE = datetime(2023, 9, 1)  # Starting date
+    END_DATE = datetime(2023,10 ,1)    # End date
 
     # Ensure tweets directory exists
     tweets_dir = get_project_tweets_dir()
@@ -751,14 +768,14 @@ def main():
     print("Checking tweets folder for completed tickers")
     tickers_to_scrape = []
     for ticker in TICKERS:
-        is_complete, latest_date = check_ticker_completion(ticker, END_DATE, tweets_dir)
+        is_complete, latest_date, missing_count = check_ticker_completion(ticker, START_DATE, END_DATE, tweets_dir)
         if is_complete:
-            print(f"{ticker}: COMPLETED with data up to {latest_date.strftime('%Y-%m-%d')})")
+            print(f"{ticker}: COMPLETED (all dates from {START_DATE.strftime('%Y-%m-%d')} to {END_DATE.strftime('%Y-%m-%d')} covered)")
         else:
-            if latest_date:
-                print(f" {ticker}: Resume from {latest_date.strftime('%Y-%m-%d')}")
+            if latest_date and missing_count:
+                print(f" {ticker}: {missing_count} missing date(s) between {START_DATE.strftime('%Y-%m-%d')} and {END_DATE.strftime('%Y-%m-%d')}")
             else:
-                print(f"{ticker}: No existing data, starting fresh")
+                print(f"{ticker}: No existing data, starting from {START_DATE.strftime('%Y-%m-%d')}")
             tickers_to_scrape.append(ticker)
 
     if not tickers_to_scrape:
