@@ -229,4 +229,5 @@ Composite alpha scores are integrated into a **Black-Litterman** framework (tau=
 
 ## License
 
-This project is part of the COMP1682 Final Year Project at the University of Greenwich.
+This project is part of my COMP1682 Final Year Project at the University of Greenwich. MIT license applies here.
+
