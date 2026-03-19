@@ -258,6 +258,9 @@ def _tweet_ticker(ticker):
 def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
     """Classify tweets and save daily sentiment CSVs.
 
+    Checks existing processed data and only scores raw rows newer than
+    the latest processed date, then appends the new daily aggregates.
+
     Parameters
     ----------
     tickers : list[str]
@@ -285,6 +288,35 @@ def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
             continue
 
         print(f"\n--- {ticker} tweets ---")
+        print(f"  Raw rows: {len(df)}")
+
+        # ---- Check existing processed data ----
+        out_path = SOCIAL_SENTIMENT_DIR / f"{tweet_ticker}_tweets_sentiment_daily.csv"
+        existing_daily = None
+        latest_processed = None
+
+        if out_path.exists():
+            existing_daily = pd.read_csv(out_path)
+            if "date" in existing_daily.columns and len(existing_daily) > 0:
+                latest_processed = pd.to_datetime(existing_daily["date"]).max()
+                print(f"  Processed data up to: {latest_processed.date()}")
+
+        # ---- Filter raw data to only new rows ----
+        if "post_date" not in df.columns:
+            print("  [SKIP] missing 'post_date' column")
+            continue
+
+        df["_parsed_date"] = pd.to_datetime(df["post_date"], utc=True, errors="coerce")
+
+        if latest_processed is not None:
+            cutoff = pd.Timestamp(latest_processed, tz="UTC")
+            df = df[df["_parsed_date"] > cutoff]
+            if df.empty:
+                print(f"  Already up to date ({len(existing_daily)} daily rows)")
+                continue
+            print(f"  New rows to process: {len(df)}")
+
+        df = df.drop(columns=["_parsed_date"])
 
         # DataFrame-level filtering
         df = filter_dataframe(df)
@@ -307,15 +339,11 @@ def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
         df = df.dropna(subset=["sentiment"])
 
         # Assign to NYSE session via 16:00 ET cutoff
-        if "post_date" not in df.columns:
-            print("  [SKIP] missing 'post_date' column")
-            continue
-
         df["trade_date"] = assign_market_close_session(df["post_date"])
         df["sentiment"] = df["sentiment"].astype(float).clip(-1, 1)
 
         # Aggregate to daily
-        daily = df.groupby("trade_date").agg(**{
+        new_daily = df.groupby("trade_date").agg(**{
             "avg_sentiment": pd.NamedAgg(column="sentiment", aggfunc="mean"),
             **{
                 f"total_{c}": pd.NamedAgg(column=c, aggfunc="sum")
@@ -324,9 +352,16 @@ def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
             },
         }).reset_index().rename(columns={"trade_date": "date"})
 
-        daily["avg_sentiment"] = daily["avg_sentiment"].round(4)
-        daily = daily.sort_values("date").reset_index(drop=True)
+        new_daily["avg_sentiment"] = new_daily["avg_sentiment"].round(4)
 
-        out_path = SOCIAL_SENTIMENT_DIR / f"{tweet_ticker}_tweets_sentiment_daily.csv"
-        daily.to_csv(out_path, index=False)
-        print(f"  Saved {len(daily)} daily rows -> {out_path.name}")
+        # ---- Merge with existing processed data ----
+        if existing_daily is not None and len(existing_daily) > 0:
+            combined = pd.concat([existing_daily, new_daily], ignore_index=True)
+            # For overlapping dates (boundary), keep the new computation
+            combined = combined.drop_duplicates(subset=["date"], keep="last")
+        else:
+            combined = new_daily
+
+        combined = combined.sort_values("date").reset_index(drop=True)
+        combined.to_csv(out_path, index=False)
+        print(f"  Saved {len(combined)} daily rows -> {out_path.name} (+{len(new_daily)} new)")

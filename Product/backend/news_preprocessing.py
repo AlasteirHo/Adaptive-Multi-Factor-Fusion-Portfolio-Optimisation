@@ -62,6 +62,9 @@ def preprocess_headline(title):
 def classify_news(tickers, tokenizer, model, device, batch_size=16):
     """Classify GDELT news headlines and save daily sentiment CSVs.
 
+    Checks existing processed data and only scores raw rows newer than
+    the latest processed date, then appends the new daily aggregates.
+
     Parameters
     ----------
     tickers : list[str]
@@ -85,6 +88,29 @@ def classify_news(tickers, tokenizer, model, device, batch_size=16):
             continue
 
         print(f"\n--- {ticker} news ---")
+        print(f"  Raw rows: {len(df)}")
+
+        # ---- Check existing processed data ----
+        out_path = NEWS_SENTIMENT_DIR / f"{ticker}_news_sentiment_daily.csv"
+        existing_daily = None
+        latest_processed = None
+
+        if out_path.exists():
+            existing_daily = pd.read_csv(out_path)
+            if "date" in existing_daily.columns and len(existing_daily) > 0:
+                latest_processed = pd.to_datetime(existing_daily["date"]).max()
+                print(f"  Processed data up to: {latest_processed.date()}")
+
+        # ---- Filter raw data to only new rows ----
+        df["_parsed_date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+
+        if latest_processed is not None:
+            cutoff = pd.Timestamp(latest_processed, tz="UTC")
+            df = df[df["_parsed_date"] > cutoff]
+            if df.empty:
+                print(f"  Already up to date ({len(existing_daily)} daily rows)")
+                continue
+            print(f"  New rows to process: {len(df)}")
 
         # Clean
         df["clean_headline"] = df["headline"].apply(preprocess_headline)
@@ -105,15 +131,22 @@ def classify_news(tickers, tokenizer, model, device, batch_size=16):
         valid["sentiment_score"] = valid["sentiment_score"].astype(float).clip(-1, 1)
 
         # Aggregate to daily avg_sentiment
-        daily = (
+        new_daily = (
             valid.groupby("trade_date")["sentiment_score"]
             .mean()
             .reset_index()
             .rename(columns={"trade_date": "date", "sentiment_score": "avg_sentiment"})
         )
-        daily["avg_sentiment"] = daily["avg_sentiment"].round(4)
-        daily = daily.sort_values("date").reset_index(drop=True)
+        new_daily["avg_sentiment"] = new_daily["avg_sentiment"].round(4)
 
-        out_path = NEWS_SENTIMENT_DIR / f"{ticker}_news_sentiment_daily.csv"
-        daily.to_csv(out_path, index=False)
-        print(f"  Saved {len(daily)} daily rows -> {out_path.name}")
+        # ---- Merge with existing processed data ----
+        if existing_daily is not None and len(existing_daily) > 0:
+            combined = pd.concat([existing_daily, new_daily], ignore_index=True)
+            # For overlapping dates (boundary), keep the new computation
+            combined = combined.drop_duplicates(subset=["date"], keep="last")
+        else:
+            combined = new_daily
+
+        combined = combined.sort_values("date").reset_index(drop=True)
+        combined.to_csv(out_path, index=False)
+        print(f"  Saved {len(combined)} daily rows -> {out_path.name} (+{len(new_daily)} new)")

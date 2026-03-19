@@ -4,6 +4,7 @@ Mirrors the notebook (Adaptive_Fusion_POC.ipynb) cell 2.
 """
 
 import os
+import sys
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from pathlib import Path
@@ -12,6 +13,12 @@ import torch
 # ---- Paths (relative to FYP root) ----
 PRODUCT_DIR          = Path(__file__).resolve().parents[1]
 FYP_DIR              = PRODUCT_DIR.parent
+
+# ---- Conda environment ----
+CONDA_ENV_NAME = "fyp-gpu"
+_conda_root = Path(os.environ["CONDA_EXE"]).parents[1] if "CONDA_EXE" in os.environ else None
+_conda_env_python = _conda_root / "envs" / CONDA_ENV_NAME / "python.exe" if _conda_root else None
+PYTHON_EXE = str(_conda_env_python) if _conda_env_python and _conda_env_python.exists() else sys.executable
 NEWS_SENTIMENT_DIR   = FYP_DIR / "Processed_Data" / "news_sentiment_daily"
 SOCIAL_SENTIMENT_DIR = FYP_DIR / "Processed_Data" / "tweets_sentiment_daily"
 OPTIMIZER_DIR        = FYP_DIR / "portfolio_optimizer"
