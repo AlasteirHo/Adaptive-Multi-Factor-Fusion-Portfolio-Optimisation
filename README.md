@@ -81,15 +81,24 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 |
 +-- Product/                                  # Streamlit demo application
 |   +-- main.py
-|   +-- core/
-|   |   +-- paths.py
-|   +-- pages/
-|   |   +-- 0_About.py
-|   |   +-- 1_Data_Collection.py
-|   |   +-- 2_Portfolio_Simulation.py
+|   +-- backend/
+|   |   +-- config.py                         # Paths, tickers, constants
+|   |   +-- data.py                           # Data loading utilities
+|   |   +-- features.py                       # Factor construction
+|   |   +-- model.py                          # Attention network definition
+|   |   +-- backtest.py                       # Walk-forward backtest engine
+|   |   +-- optimizer.py                      # Black-Litterman & Sharpe MVO
+|   |   +-- sentiment.py                      # FIN-RoBERTa inference
+|   |   +-- news_preprocessing.py             # News cleaning pipeline
+|   |   +-- tweets_preprocessing.py           # Tweet cleaning pipeline
+|   +-- frontend/
+|   |   +-- about.py                          # Home / system status page
+|   |   +-- data_collection.py                # Scraper & sentiment UI
+|   |   +-- portfolio_simulation.py           # Strategy selection & backtest UI
 |   +-- runners/
-|       +-- gdelt_runner.py
-|       +-- twitter_runner.py
+|       +-- gdelt_runner.py                   # GDELT scraper subprocess
+|       +-- twitter_runner.py                 # Twitter scraper subprocess
+|       +-- sentiment_runner.py               # Sentiment classification subprocess
 |
 +-- requirements.txt
 +-- .gitignore
@@ -101,7 +110,7 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 
 ### Prerequisites
 
-- Python 3.12
+- Python 3.12+
 - Conda (recommended) or venv
 - Chrome browser (for Twitter scraping)
 - NVIDIA GPU with CUDA support (optional; accelerates sentiment inference and NN training)
@@ -118,7 +127,7 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
    ```bash
    pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130
    ```
-   This installs the CUDA 13.0 build of PyTorch for GPU acceleration. Skip this step if running you have an AMD GPU or CPU-only .
+   This installs the CUDA 13.0 build of PyTorch for GPU acceleration. Skip this step if you are running an AMD GPU or CPU-only .
 
 3. **Install remaining dependencies:**
    ```bash
@@ -164,11 +173,16 @@ Outputs to `Processed_Data/news_sentiment_daily/` and `Processed_Data/tweets_sen
 Run the main notebook in `portfolio_optimizer/`:
 - `Adaptive_Fusion_POC.ipynb` -- Trains the attention network, runs the walk-forward backtest for all strategies, and generates all results and visualisations
 
-### Step 5: Demo App (optional)
+### Step 5: Streamlit GUI (optional)
 ```bash
 cd Product
 streamlit run main.py
 ```
+Opens a three-page web application:
+
+- **About / Home** -- System status dashboard showing raw and sentiment file counts, trade log availability, and a strategy performance snapshot table.
+- **Data Collection** -- Launch GDELT news and Twitter/X scrapers with configurable date ranges and ticker selection. Real-time subprocess log streaming displays progress in scrollable panels. A separate sentiment classification panel runs FIN-RoBERTa over raw data to produce daily sentiment CSVs.
+- **Portfolio Simulation** -- Select among the four strategies, trigger live neural-network training with epoch-level progress, and run the walk-forward backtest with a day-by-day animated equity curve (Play/Stop controls). Interactive charts display NAV, drawdown, portfolio weights, attention heatmaps, and the full trade log.
 
 ## Models
 
@@ -218,7 +232,7 @@ Context (10-dim) --> Linear(32) --> ReLU --> Dropout(0.2)
 
 ### Portfolio Construction
 
-Composite alpha scores are integrated into a **Black-Litterman** framework (tau=0.5, delta=2.5) and optimised via **Sharpe ratio maximisation** (SLSQP) with weight bounds [5%, 20%] and top-5 stock selection per rebalance.
+Composite alpha scores are integrated into a **Black-Litterman** framework (tau=0.5, delta=2.5) and optimised via **Sharpe ratio maximisation** (SLSQP) with weight bounds [5%, 40%] and top-5 stock selection per rebalance.
 
 ## Key Design Decisions
 
@@ -229,5 +243,4 @@ Composite alpha scores are integrated into a **Black-Litterman** framework (tau=
 
 ## License
 
-This project is part of my COMP1682 Final Year Project at the University of Greenwich. MIT license applies here.
-
+This project is part of the COMP1682 Final Year Project at the University of Greenwich.
