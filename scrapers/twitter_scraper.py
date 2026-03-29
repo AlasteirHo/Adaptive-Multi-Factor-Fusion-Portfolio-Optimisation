@@ -291,42 +291,11 @@ class TwitterScraper:
 
         time.sleep(1)
 
-        # Click on the ticker suggestion from the dropdown (e.g. "$nvda")
-        # Extract the ticker part (e.g. "$NVDA") from the query for matching
-        ticker_part = query.split()[0] if query else query
-        clicked_suggestion = False
-        try:
-            # Look for the suggestion div containing the ticker text
-            suggestion = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH,
-                    f'//span[translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="{ticker_part.lower()}"]/ancestor::div[contains(@class,"r-1mmae3n")]'
-                ))
-            )
-            suggestion.click()
-            print(f"Clicked ticker suggestion for {ticker_part}")
-            clicked_suggestion = True
-            time.sleep(random.uniform(3, 5))
-        except:
-            pass
-
-        if not clicked_suggestion:
-            # Fallback: try clicking "Search for" suggestion
-            try:
-                search_suggestion = WebDriverWait(self.driver, 3).until(
-                    EC.element_to_be_clickable((By.XPATH, '//span[contains(text(), "Search for")]'))
-                )
-                search_suggestion.click()
-                print("Clicked 'Search for' suggestion")
-                clicked_suggestion = True
-                time.sleep(random.uniform(3, 5))
-            except:
-                pass
-
-        if not clicked_suggestion:
-            # Final fallback: press Enter
-            print("No suggestion found, pressing Enter")
-            search_input.send_keys(Keys.ENTER)
-            time.sleep(random.uniform(3, 5))
+        # Submit the full query via Enter to preserve date filters (since:/until:)
+        # Do NOT click autocomplete suggestions as they replace the query with just the ticker
+        search_input.send_keys(Keys.ENTER)
+        print(f"Submitted search query: {query}")
+        time.sleep(random.uniform(3, 5))
 
         # Search lands on the "Top" tab by default
 
@@ -380,6 +349,11 @@ class TwitterScraper:
                 if self.check_for_error_message():
                     print(f"Error still occurs after waiting. Continuing")
                     continue
+
+            # Log current URL and page state for debugging
+            print(f"  Current URL: {self.driver.current_url}")
+            tweet_elements = self.driver.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]')
+            print(f"  Tweet elements on page: {len(tweet_elements)}")
 
             tweets = self.scrape_tweets()
             if tweets:
@@ -561,21 +535,25 @@ class TwitterScraper:
         return missing
 
     def sort_csv(self, filename):
-        # Re-sort the CSV by post_date so gap-filled rows are in the right position
+        # Re-sort the CSV by search_date so gap-filled rows are in the right position
         if not os.path.exists(filename):
             return
         try:
             df = pd.read_csv(filename)
             rows_before = len(df)
-            df['_parsed'] = pd.to_datetime(df['post_date'], errors='coerce')
+            # Sort by search_date (clean YYYY-MM-DD we control) instead of post_date
+            # which can be misaligned by body text containing commas/quotes
+            df['_parsed'] = pd.to_datetime(df['search_date'], format='%Y-%m-%d', errors='coerce')
             bad_rows = df['_parsed'].isna().sum()
             if bad_rows > 0:
-                print(f"WARNING: sort_csv function is dropping {bad_rows} rows with unparseable post_date")
-            df = df.dropna(subset=['_parsed'])
-            df = df.sort_values('_parsed').reset_index(drop=True)
+                print(f"WARNING: {bad_rows} rows with unparseable search_date (kept, not dropped)")
+            # Sort parseable rows; keep unparseable rows at the end instead of dropping them
+            df_good = df[df['_parsed'].notna()].sort_values('_parsed')
+            df_bad = df[df['_parsed'].isna()]
+            df = pd.concat([df_good, df_bad], ignore_index=True)
             df = df.drop(columns=['_parsed'])
             df.to_csv(filename, index=False)
-            print(f"sort_csv: {rows_before} rows -> {len(df)} rows")
+            print(f"sort_csv: {rows_before} rows in, {len(df)} rows out (0 dropped)")
         except Exception as e:
             print(f"Error sorting CSV: {e}")
 
@@ -597,7 +575,14 @@ class TwitterScraper:
                 tweet['ticker'] = ticker
                 tweet['search_date'] = gap_date.strftime('%Y-%m-%d')
             print(f"Found {len(tweets)} tweets")
-            self.save_to_csv(tweets, output_file)
+            if tweets:
+                size_before = os.path.getsize(output_file) if os.path.exists(output_file) else 0
+                self.save_to_csv(tweets, output_file)
+                size_after = os.path.getsize(output_file) if os.path.exists(output_file) else 0
+                if size_after <= size_before:
+                    print(f"WARNING: File size did not increase! Before: {size_before}, After: {size_after}")
+            else:
+                print(f"WARNING: No tweets found for ${ticker} on {gap_date.strftime('%Y-%m-%d')} — nothing to write")
             time.sleep(random.uniform(5, 10))
 
         print(f"Completed all missing dates for ${ticker}")
@@ -614,15 +599,37 @@ class TwitterScraper:
         import csv
         columns = ['ticker', 'search_date', 'body', 'post_date', 'replies', 'retweets', 'likes']
         file_exists = os.path.exists(filename)
+        size_before = os.path.getsize(filename) if file_exists else 0
 
-        with open(filename, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=columns, extrasaction='ignore')
-            if not file_exists:
-                writer.writeheader()
-            for tweet in tweets:
-                writer.writerow(tweet)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with open(filename, 'a', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=columns, extrasaction='ignore')
+                    if not file_exists and attempt == 0:
+                        writer.writeheader()
+                    for tweet in tweets:
+                        writer.writerow(tweet)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-        print(f"Appended {len(tweets)} tweets to {filename}")
+                # Verify the write actually increased the file size
+                size_after = os.path.getsize(filename) if os.path.exists(filename) else 0
+                if size_after > size_before:
+                    print(f"Saved {len(tweets)} tweets to {filename} ({size_before:,} -> {size_after:,} bytes)")
+                    return
+                else:
+                    print(f"WARNING: File size did not increase after write (attempt {attempt + 1}/{max_attempts})")
+
+            except PermissionError as e:
+                print(f"ERROR: File locked (attempt {attempt + 1}/{max_attempts}), possibly by OneDrive: {e}")
+            except Exception as e:
+                print(f"ERROR: Write failed (attempt {attempt + 1}/{max_attempts}): {e}")
+
+            if attempt < max_attempts - 1:
+                time.sleep(3)
+
+        print(f"ERROR: Failed to save {len(tweets)} tweets after {max_attempts} attempts")
 
     def get_latest_date_from_csv(self, filename):
         # Get the latest search_date from an existing CSV file to resume scraping
@@ -739,7 +746,7 @@ def main():
     USERNAME = os.getenv("TWITTER_USERNAME")
     PASSWORD = os.getenv("TWITTER_PASSWORD")
 
-    # All tickers to scrape (Half of the queries to avoid rate limits)
+    # All tickers to scrape 
     TICKERS = [
       # Technology
         "NVDA", "AAPL", "MSFT", "AVGO", "ORCL",
@@ -757,8 +764,8 @@ def main():
         "XOM",
     ]
 
-    START_DATE = datetime(2023, 9, 1)  # Starting date
-    END_DATE = datetime(2023,10 ,1)    # End date
+    START_DATE = datetime(2026, 3, 1)  # Starting date
+    END_DATE = datetime(2026,3 ,29)    # End date
 
     # Ensure tweets directory exists
     tweets_dir = get_project_tweets_dir()
