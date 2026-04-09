@@ -47,7 +47,6 @@ class TwitterScraper:
         options.add_argument("--mute-audio")
         options.add_argument("--no-first-run")
         options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--disable-web-security")
 
         # Use a persistent Chrome profile so the browser has history/cookies
         # and doesn't look like a fresh bot instance each run (Bot detection evasion)
@@ -470,7 +469,7 @@ class TwitterScraper:
                 if not raw_date:
                     return None
                 # Reformat to consistent ISO 8601 with timezone offset (e.g. 2024-10-13T17:23:08+00:00)
-                post_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+                post_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S+00:00')
             except:
                 return None
 
@@ -680,19 +679,20 @@ class TwitterScraper:
     def close(self):
         if self.driver:
             try:
-                # More aggressive cleanup to prevent handle errors
-                self.driver.close()  # Close current window first
+                self.driver.close()
                 time.sleep(1)
-                self.driver.quit()   # Then quit the driver
+                self.driver.quit()
             except (OSError, Exception) as e:
                 print(f"Error during cleanup (ignored): {e}")
-                # Force kill any remaining Chrome processes if needed
+                # Kill only the Chrome process tree spawned by this driver
                 try:
                     import psutil
-                    for proc in psutil.process_iter(['name']):
-                        if 'chrome' in proc.info['name'].lower():
-                            proc.kill()
-                except:
+                    driver_pid = self.driver.service.process.pid
+                    parent = psutil.Process(driver_pid)
+                    for child in parent.children(recursive=True):
+                        child.kill()
+                    parent.kill()
+                except Exception:
                     pass
 
 # Return absolute path to the project's tweets folder.
@@ -764,8 +764,8 @@ def main():
         "XOM",
     ]
 
-    START_DATE = datetime(2026, 3, 1)  # Starting date
-    END_DATE = datetime(2026,3 ,29)    # End date
+    START_DATE = datetime(2026, 3, 30)  # Starting date
+    END_DATE = datetime(2026, 4, 5)    # End date
 
     # Ensure tweets directory exists
     tweets_dir = get_project_tweets_dir()

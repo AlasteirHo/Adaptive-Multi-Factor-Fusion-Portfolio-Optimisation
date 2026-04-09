@@ -10,6 +10,14 @@ from gdeltdoc import GdeltDoc, Filters
 from datetime import datetime, timedelta
 import time
 import os
+import requests
+
+# Patch requests.get to enforce a 30-second timeout for GDELT API calls
+_original_get = requests.get
+def _get_with_timeout(*args, **kwargs):
+    kwargs.setdefault('timeout', 30)
+    return _original_get(*args, **kwargs)
+requests.get = _get_with_timeout
 
 # Search terms used for each ticker
 # Important Consideration: GDELT API requires search keywords to be at least 4 characters
@@ -51,13 +59,13 @@ TICKERS = {
     "HD": ["Home Depot", "Home Depot stock", "Home Depot retail"],
 }
 
-START_DATE = datetime(2023,9, 1, 0, 0, 0)  # 12:00 AM on 10/10/2023
-END_DATE = datetime(2023,10, 1, 23, 59, 59)  # 11:59 PM on 12/31/2025
+START_DATE = datetime(2026,3, 30, 0, 0, 0)  # 12:00 AM on 10/10/2023
+END_DATE = datetime(2026,4, 5, 23, 59, 59)  # 11:59 PM on 12/31/2025
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Raw_Data", "gdelt_news_data")
 
 # GDELT API limits
 MAX_RECORDS = 250  # Max per query (limit to avoid overwhelming the API)
-RATE_LIMIT_DELAY = 3  # Seconds between requests (Prevent rate limiting)7877
+RATE_LIMIT_DELAY = 3  # Seconds between requests (Prevent rate limiting)
 MAX_RETRIES = 3  # Number of retries for failed requests
 
 # Reputable financial news sources to filter by
@@ -128,27 +136,35 @@ def fetch_news_for_ticker(ticker: str, keywords: list, start: datetime, end: dat
     api_end_date = end + timedelta(days=1)
 
     for keyword in keywords:
-        try:
-            f = Filters(
-                keyword=keyword,
-                start_date=start.strftime("%Y-%m-%d"),
-                end_date=api_end_date.strftime("%Y-%m-%d"),
-                num_records=MAX_RECORDS,
-                language="English"
-            )
-            articles = gd.article_search(f)
-            
-            if articles is not None and len(articles) > 0:
-                articles['search_keyword'] = keyword
-                articles['ticker'] = ticker
-                all_articles.append(articles)
-                print(f"{keyword}: {len(articles)} articles")
-            else:
-                print(f"{keyword}:contains 0 articles")
-                
-        except Exception as e:
-            print(f"Error fetching '{keyword}': {e}")
-        
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                f = Filters(
+                    keyword=keyword,
+                    start_date=start.strftime("%Y-%m-%d"),
+                    end_date=api_end_date.strftime("%Y-%m-%d"),
+                    num_records=MAX_RECORDS,
+                    language="English"
+                )
+                articles = gd.article_search(f)
+
+                if articles is not None and len(articles) > 0:
+                    articles['search_keyword'] = keyword
+                    articles['ticker'] = ticker
+                    all_articles.append(articles)
+                    print(f"{keyword}: {len(articles)} articles")
+                else:
+                    print(f"{keyword}:contains 0 articles")
+                break  # Success, no need to retry
+
+            except Exception as e:
+                print(f"Error fetching '{keyword}' (attempt {attempt}/{MAX_RETRIES}): {e}")
+                if attempt < MAX_RETRIES:
+                    wait = RATE_LIMIT_DELAY * (2 ** attempt)  # Exponential backoff
+                    print(f"Retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"[FAILED] Skipping '{keyword}' after {MAX_RETRIES} attempts")
+
         time.sleep(RATE_LIMIT_DELAY)
     
     if all_articles:
@@ -340,8 +356,8 @@ def main():
 
     # Scrape news for each ticker
     for ticker, keywords in TICKERS.items():
-        df = scrape_ticker(ticker, keywords, START_DATE, END_DATE, OUTPUT_DIR)
-        clean_and_save(df, ticker, OUTPUT_DIR)
+        scrape_ticker(ticker, keywords, START_DATE, END_DATE, OUTPUT_DIR)
+        # clean_and_save already called incrementally inside scrape_ticker
 
     print(f"\n{'='*60}")
     print("Scraping has been completed")
