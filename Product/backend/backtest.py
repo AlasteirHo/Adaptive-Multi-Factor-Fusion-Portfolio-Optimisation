@@ -127,7 +127,7 @@ def run_backtest(name, feature_data, price_data,
     trade_records = []
     rebalance_date_list = []
     days_since_rebalance = REBALANCE_DAYS
-    days_since_retrain = retrain_every
+    days_since_retrain = 0
 
     for day_index, date in enumerate(trading_days):
         portfolio_nav = available_cash + sum(
@@ -139,24 +139,35 @@ def run_backtest(name, feature_data, price_data,
 
         if days_since_rebalance >= REBALANCE_DAYS:
             days_since_rebalance = 0
-            signal_date = trading_days[day_index - 1] if day_index > 0 else date
+            # Always use t-1 signals; skip first day and rebalance on day 1
+            if day_index == 0:
+                days_since_rebalance = REBALANCE_DAYS  # trigger rebalance next day
+                continue
+            signal_date = trading_days[day_index - 1]
 
-            if day_index > 0:
-                rebalance_nav = available_cash + sum(
-                    current_shares * close_panel.loc[signal_date, ticker]
-                    for ticker, current_shares in current_holdings.items()
-                    if ticker in close_panel.columns
-                )
-            else:
-                rebalance_nav = portfolio_nav
+            rebalance_nav = available_cash + sum(
+                current_shares * close_panel.loc[signal_date, ticker]
+                for ticker, current_shares in current_holdings.items()
+                if ticker in close_panel.columns
+            )
 
             if use_adaptive and retrain_every > 0 and days_since_retrain >= retrain_every:
                 days_since_retrain = 0
                 prev_state = {k: v.clone() for k, v in model.state_dict().items()}
-                model, _, _ = train_model(
+                candidate, _, _ = train_model(
                     feature_data, train_end=str(signal_date.date()),
                     verbose=False, warm_start_state=prev_state,
                 )
+                old_scores, _ = get_composite_scores(
+                    model, feature_data, signal_date,
+                    [t for t in feature_data if t in close_panel.columns])
+                new_scores, _ = get_composite_scores(
+                    candidate, feature_data, signal_date,
+                    [t for t in feature_data if t in close_panel.columns])
+                old_spread = (max(old_scores.values()) - min(old_scores.values())) if old_scores else 0
+                new_spread = (max(new_scores.values()) - min(new_scores.values())) if new_scores else 0
+                if new_spread >= old_spread:
+                    model = candidate
 
             valid_tickers = [
                 ticker for ticker in feature_data

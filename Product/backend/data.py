@@ -93,7 +93,7 @@ def load_sentiment_data(tickers=None, start=DATA_START, end=BACKTEST_END,
             news_series.reindex(date_range).notna().astype(float)
             if news_series is not None else 0.0
         )
-        sentiment[ticker] = aligned_df.ffill(limit=3).fillna(0.0).clip(-1.0, 1.0)
+        sentiment[ticker] = aligned_df.fillna(0.0).clip(-1.0, 1.0)
     print(f"Loaded sentiment for {len(sentiment)}/{len(tickers)} tickers")
     if missing_news:
         print(f"  Missing news CSVs  : {missing_news}")
@@ -111,7 +111,7 @@ def build_master_dataset(price_data, sentiment_data):
         else:
             merged = price_df.copy()
             merged[["news_sentiment", "social_sentiment", "news_available"]] = 0.0
-        master[ticker] = merged.ffill(limit=3).fillna(0.0)
+        master[ticker] = merged.fillna(0.0)
     return master
 
 

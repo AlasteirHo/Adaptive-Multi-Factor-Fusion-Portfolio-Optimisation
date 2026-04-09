@@ -105,7 +105,7 @@ def build_features(master):
         for sector_idx, sector_label in enumerate(SECTORS):
             ticker_df[f"sector_{sector_label}"] = one_hot_vector[sector_idx]
 
-        for h in {1, 5, FWD_HORIZON}:
+        for h in [1, 5, FWD_HORIZON]:
             ticker_df[f"fwd_return_{h}d"] = ticker_df["Close"].pct_change(h).shift(-h)
         all_features[ticker] = ticker_df
     n_cols = len(next(iter(all_features.values())).columns)

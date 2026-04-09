@@ -15,7 +15,7 @@ from .config import (
     BATCH_SIZE,
     CONTEXT_COLS,
     CONTEXT_DIM,
-    DATA_START,
+    TRAIN_START,
     DEVICE,
     DROPOUT_RATE,
     ENTROPY_LAMBDA,
@@ -27,6 +27,7 @@ from .config import (
     N_FACTORS,
     PIN_MEMORY,
     RANDOM_SEED,
+    ROLLING_WINDOW,
     SOFTMAX_TEMP,
     TRAIN_END,
     TRAIN_EPOCHS,
@@ -121,13 +122,25 @@ def get_composite_scores(model, feature_data, date, tickers):
 # Training
 # ---------------------------------------------------------------------------
 
-def build_train_tensors(feature_data, train_end=None, min_rows=60, verbose=True):
+def build_train_tensors(feature_data, train_end=None, min_rows=20, verbose=True):
     cutoff = pd.Timestamp(train_end) if train_end is not None else pd.Timestamp(TRAIN_END)
     target_col = f"fwd_return_{FWD_HORIZON}d"
 
+    # Push back by FWD_HORIZON business days so no forward-return target
+    # uses prices from after the cutoff (prevents look-ahead bias).
+    safe_cutoff = cutoff - pd.tseries.offsets.BDay(FWD_HORIZON)
+
+    # Rolling window: use ROLLING_WINDOW trading days (~3 months) of recent
+    # data for walk-forward retrains to keep the model adapted to current
+    # regime while avoiding stale patterns.
+    if train_end is not None:
+        rolling_start = safe_cutoff - pd.tseries.offsets.BDay(ROLLING_WINDOW)
+    else:
+        rolling_start = pd.Timestamp(TRAIN_START)
+
     all_rows = []
     for ticker, df in feature_data.items():
-        mask = (df.index >= DATA_START) & (df.index < cutoff)
+        mask = (df.index >= rolling_start) & (df.index < safe_cutoff)
         ticker_subset = df[mask].dropna(subset=FACTOR_COLS + CONTEXT_COLS + [target_col])
         if len(ticker_subset) < min_rows:
             continue
@@ -147,6 +160,13 @@ def build_train_tensors(feature_data, train_end=None, min_rows=60, verbose=True)
             })
 
     all_rows.sort(key=lambda sample: sample["date"])
+
+    if len(all_rows) < 2:
+        if verbose:
+            print(f"WARNING: insufficient training data ({len(all_rows)} rows). "
+                  "Returning empty tensors -- model will keep previous weights.")
+        return [], []
+
     n_val = max(int(len(all_rows) * 0.15), 1)
     n_train = len(all_rows) - n_val
 
@@ -182,12 +202,17 @@ def build_train_tensors(feature_data, train_end=None, min_rows=60, verbose=True)
     return to_date_groups(all_rows[:n_train]), to_date_groups(all_rows[n_train:])
 
 
-def rank_ic_loss(predictions, targets):
+def pearson_ic_loss(predictions, targets):
+    """Negative Pearson IC (cross-sectional)."""
     pred_centered = predictions - predictions.mean()
     target_centered = targets - targets.mean()
     return -(pred_centered * target_centered).sum() / (
         pred_centered.norm() * target_centered.norm() + 1e-8
     )
+
+
+# Keep old name as alias for backward compatibility
+rank_ic_loss = pearson_ic_loss
 
 
 def attention_entropy(weights):
@@ -208,20 +233,47 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
         feature_data, train_end=train_end, verbose=verbose
     )
 
+    if not train_groups:
+        # Insufficient data -- return existing model unchanged
+        if warm_start_state is not None:
+            model = AdaptiveFusionNetwork().to(DEVICE)
+            model.load_state_dict(warm_start_state)
+            return model, [], []
+        return AdaptiveFusionNetwork().to(DEVICE), [], []
+
     context_size = train_groups[0][1].shape[1]
     model = AdaptiveFusionNetwork(context_size).to(DEVICE)
-    if warm_start_state is not None:
+    is_finetune = warm_start_state is not None
+    if is_finetune:
         model.load_state_dict(warm_start_state)
     model = maybe_compile(model)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+
+    ft_lr = LEARNING_RATE / 5 if is_finetune else LEARNING_RATE
+    optimizer = optim.Adam(model.parameters(), lr=ft_lr, weight_decay=WEIGHT_DECAY)
     scaler = torch.amp.GradScaler("cuda", enabled=USE_AMP)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, patience=20, factor=0.5, min_lr=1e-5
+        optimizer, patience=10 if is_finetune else 20, factor=0.5, min_lr=1e-5
     )
 
-    best_val_loss, best_state, patience_counter = float("inf"), None, 0
-    EARLY_STOP = 40
+    EARLY_STOP = 15 if is_finetune else 40
     train_ic_history, val_ic_history = [], []
+
+    # For warm-start: evaluate initial model on val first; only accept improvements.
+    if is_finetune and val_groups:
+        model.eval()
+        baseline_ics = []
+        with torch.no_grad():
+            for f_b, c_b, t_b in val_groups:
+                if len(t_b) >= 4:
+                    with torch.amp.autocast("cuda", enabled=USE_AMP):
+                        baseline_ics.append(
+                            -rank_ic_loss(model(f_b, c_b)[0], t_b).item())
+        baseline_val_ic = float(np.mean(baseline_ics)) if baseline_ics else 0.0
+        best_val_loss = -baseline_val_ic
+        best_state = {k: v.clone() for k, v in model.state_dict().items()}
+        patience_counter = 0
+    else:
+        best_val_loss, best_state, patience_counter = float("inf"), None, 0
 
     if verbose:
         device_label = torch.cuda.get_device_name(0) if DEVICE == "cuda" else DEVICE
@@ -254,7 +306,7 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
             with torch.amp.autocast("cuda", enabled=USE_AMP):
                 ic_loss = torch.stack(batch_losses).mean()
                 all_attn = torch.cat(batch_attentions, dim=0)
-                entropy_penalty = -ENTROPY_LAMBDA * attention_entropy(all_attn)
+                entropy_penalty = ENTROPY_LAMBDA * attention_entropy(all_attn)
                 total_loss = ic_loss + entropy_penalty
             scaler.scale(total_loss).backward()
             scaler.unscale_(optimizer)
@@ -292,7 +344,7 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
 
         if verbose and (epoch % 10 == 0 or epoch == 1):
             print(f"  Epoch {epoch:3d} | train IC={train_ic:.4f} | val IC={val_ic:.4f} "
-                  f"| gap={train_ic - val_ic:+.4f}")
+                  f"| gap={train_ic - val_ic:+.4f} | lr={optimizer.param_groups[0]['lr']:.2e}")
 
         if patience_counter >= EARLY_STOP:
             if verbose:
@@ -302,9 +354,12 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
     raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
     raw_model.load_state_dict(best_state)
     raw_model.eval()
+    train_ic_final = float(np.mean(train_ic_list)) if train_ic_list else 0.0
+    val_ic_final   = -best_val_loss
     if verbose:
-        val_ic_final = -best_val_loss
         print(f"  Training complete. Best val IC: {val_ic_final:.4f}")
+        print(f"  Final gap  : {train_ic_final - val_ic_final:+.4f}  "
+              f"{'(overfit)' if train_ic_final - val_ic_final > 0.10 else '(healthy)'}")
     return raw_model, train_ic_history, val_ic_history
 
 

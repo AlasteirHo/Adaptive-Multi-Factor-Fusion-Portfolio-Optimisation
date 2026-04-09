@@ -8,6 +8,7 @@ import sys
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from pathlib import Path
+import pandas as pd
 import torch
 
 # ---- Paths (relative to FYP root) ----
@@ -59,9 +60,30 @@ SECTOR_MAP = {
 SECTORS = sorted(set(SECTOR_MAP.values()))
 
 # ---- Date ranges ----
-DATA_START     = "2023-09-01"
 BACKTEST_START = "2025-01-01"
-BACKTEST_END   = "2026-01-01"
+
+def _detect_data_bounds(*dirs: Path):
+    """Scan sentiment CSVs and return (earliest, latest) available dates."""
+    earliest = pd.Timestamp.today()
+    latest   = pd.Timestamp(BACKTEST_START)
+    for d in dirs:
+        if not d.exists():
+            continue
+        for csv in d.glob("*.csv"):
+            try:
+                dates = pd.read_csv(csv, usecols=["date"], parse_dates=["date"])["date"]
+                if not dates.empty:
+                    earliest = min(earliest, dates.min())
+                    latest   = max(latest,   dates.max())
+            except Exception:
+                continue
+    return str(earliest.normalize().date()), str(latest.normalize().date())
+
+DATA_START, BACKTEST_END = _detect_data_bounds(
+    FYP_DIR / "Processed_Data" / "news_sentiment_daily",
+    FYP_DIR / "Processed_Data" / "tweets_sentiment_daily",
+)
+TRAIN_START    = DATA_START   # use all available history (20-stock universe needs maximum data)
 TRAIN_END      = BACKTEST_START
 
 # ---- Portfolio ----
@@ -98,7 +120,8 @@ ENTROPY_LAMBDA = 0.0
 FWD_HORIZON    = 10
 RANDOM_SEED    = 42
 STATIC_WEIGHTS = [1 / N_FACTORS] * N_FACTORS
-RETRAIN_EVERY  = 60
+RETRAIN_EVERY  = REBALANCE_DAYS  # retrain at every rebalance for walk-forward
+ROLLING_WINDOW = 63           # ~3 months of trading days for rolling training window
 
 # ---- Black-Litterman ----
 BL_TAU         = 0.5
