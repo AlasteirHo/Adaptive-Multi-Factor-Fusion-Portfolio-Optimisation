@@ -35,13 +35,13 @@ Both Adaptive variants (Walk-Forward and Fixed) produced identical base results,
 ### Portfolio NAV Performance
 
 <p align="center">
-  <img src="Report/1_nav_comparison.png" alt="Portfolio NAV comparison across all six strategies" width="800"/>
+  <img src="diagrams/1_nav_comparison.png" alt="Portfolio NAV comparison across all six strategies" width="800"/>
 </p>
 
 ### Drawdown Comparison
 
 <p align="center">
-  <img src="Report/2_drawdown_comparison.png" alt="Drawdown profiles for all strategies" width="800"/>
+  <img src="diagrams/2_drawdown_comparison.png" alt="Drawdown profiles for all strategies" width="800"/>
 </p>
 
 ## Overview
@@ -61,7 +61,7 @@ The system performs the following pipeline:
 ### Portfolio Optimisation Pipeline
 
 <p align="center">
-  <img src="Report/Portfolio_Pipeline.png" alt="Portfolio optimisation pipeline" width="800"/>
+  <img src="diagrams/Portfolio_Pipeline.png" alt="Portfolio optimisation pipeline" width="800"/>
 </p>
 
 Close prices feed into technical indicator computation and a shrunk 60-day covariance matrix. News and tweet sentiment scores join the technical factors to form 8 Z-scored signals. The attention network, conditioned on volatility regime and sector context, produces adaptive factor weights that fuse the signals into a composite alpha score. These alpha scores become views in the Black-Litterman framework, which combines market equilibrium priors with the model's views to produce posterior expected returns. A Sharpe ratio maximiser (SLSQP) then determines optimal portfolio weights.
@@ -69,7 +69,7 @@ Close prices feed into technical indicator computation and a shrunk 60-day covar
 ### Adaptive Fusion Network
 
 <p align="center">
-  <img src="Report/AdaptiveFusionArchitecture.png" alt="Attention network architecture" width="500"/>
+  <img src="diagrams/AdaptiveFusionArchitecture.png" alt="Attention network architecture" width="500"/>
 </p>
 
 The context-conditioned attention network takes 10 context inputs (volatility regime tercile, news/social intensity, 7 sector one-hots) and produces 8 factor weights via softmax:
@@ -87,7 +87,7 @@ The network is trained by maximising the information coefficient (IC) between pr
 ### Strategy Hierarchy
 
 <p align="center">
-  <img src="Report/Strategies.png" alt="Strategy hierarchy from S1 (SPY) to S5 (Adaptive NN Fusion)" width="700"/>
+  <img src="diagrams/Strategies.png" alt="Strategy hierarchy from S1 (SPY) to S5 (Adaptive NN Fusion)" width="700"/>
 </p>
 
 Five strategies of increasing complexity are compared to isolate the contribution of each component: market benchmark (S1), equal-weight diversification (S2), technical-only factors (S3), static sentiment fusion (S4), and adaptive NN-based fusion (S5).
@@ -95,7 +95,7 @@ Five strategies of increasing complexity are compared to isolate the contributio
 ### Factor Attribution
 
 <p align="center">
-  <img src="Report/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
+  <img src="diagrams/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
 </p>
 
 The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.0%), 5-day reversal (20.8%), and abnormal volume (15.5%) account for 68.3% of the attention budget. News sentiment (8.7%) and social sentiment (4.6%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
@@ -103,7 +103,7 @@ The attention network allocates the majority of weight to risk-based technical f
 ### Volatility Regime Adaptation
 
 <p align="center">
-  <img src="Report/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
+  <img src="diagrams/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
 </p>
 
 The model adapts its factor weighting based on the prevailing volatility regime. In high-volatility periods, the network increases weight on idiosyncratic volatility and RSI (mean-reversion signals), while in low-volatility periods it allocates relatively more to sentiment and momentum signals. This regime-conditional behaviour is learned end-to-end without explicit rules.
@@ -111,7 +111,7 @@ The model adapts its factor weighting based on the prevailing volatility regime.
 ### Bootstrap Confidence Intervals
 
 <p align="center">
-  <img src="Report/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
+  <img src="diagrams/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
 </p>
 
 Statistical robustness is assessed via 2,000 stationary bootstrap resamples with geometric block length of 10 days. While the Adaptive strategies show higher point estimates across all metrics, the 95% confidence intervals overlap across strategies, reflecting the inherent uncertainty of a single 252-day evaluation window.
