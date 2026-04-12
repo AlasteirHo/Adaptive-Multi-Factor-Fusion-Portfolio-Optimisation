@@ -23,6 +23,7 @@ from backend.config import (
     FACTOR_COLS,
     REBALANCE_DAYS,
     RETRAIN_EVERY,
+    STOP_LOSS_PCT,
     TOP_N_STOCKS,
     USE_AMP,
 )
@@ -197,12 +198,68 @@ selected_strategies = st.sidebar.multiselect(
 
 run_benchmarks = st.sidebar.checkbox("Include SPY & Equal-Weight benchmarks", value=True)
 
+# ---- Stop-loss controls --------------------------------------------------
 st.sidebar.divider()
+st.sidebar.subheader("Stop-Loss")
+use_stop_loss = st.sidebar.toggle(
+    "Enable stop-loss",
+    value=False,
+    help=(
+        "When enabled, any held position whose intraday Low falls below "
+        "entry_price * (1 - threshold) is liquidated at the stop price, "
+        "with cash held until the next rebalance."
+    ),
+)
+stop_loss_pct_input = st.sidebar.number_input(
+    "Stop-loss threshold (%)",
+    min_value=0.1,
+    max_value=50.0,
+    value=float(STOP_LOSS_PCT * 100),
+    step=0.1,
+    disabled=not use_stop_loss,
+    help="Per-position drawdown at which a holding is liquidated.",
+)
+stop_loss_strategies = st.sidebar.multiselect(
+    "Apply stop-loss to",
+    options=selected_strategies,
+    default=selected_strategies if use_stop_loss else [],
+    disabled=not use_stop_loss,
+    help="Choose which strategies use the stop-loss rule.",
+)
+stop_loss_pct_value = (stop_loss_pct_input / 100.0) if use_stop_loss else None
+
+# ---- Date range controls -------------------------------------------------
+st.sidebar.divider()
+st.sidebar.subheader("Backtest Period")
+_default_start = pd.Timestamp(BACKTEST_START).date()
+_default_end = pd.Timestamp(BACKTEST_END).date()
+backtest_start_date = st.sidebar.date_input(
+    "Start date",
+    value=_default_start,
+    help="First trading day of the backtest window. Default is the project's backtest start.",
+)
+backtest_end_date = st.sidebar.date_input(
+    "End date",
+    value=_default_end,
+    help="Last trading day of the backtest window. Default is the latest available data.",
+)
+if backtest_end_date <= backtest_start_date:
+    st.sidebar.error("End date must be after start date.")
+
+backtest_start_str = backtest_start_date.isoformat()
+backtest_end_str = backtest_end_date.isoformat()
+
+st.sidebar.divider()
+if use_stop_loss and stop_loss_strategies:
+    _stop_loss_label = f"{stop_loss_pct_input:.1f}% ({len(stop_loss_strategies)} strategies)"
+else:
+    _stop_loss_label = "Off"
 st.sidebar.markdown(
     f"**Config snapshot**\n"
-    f"- Backtest: {BACKTEST_START} to {BACKTEST_END}\n"
+    f"- Backtest: {backtest_start_str} to {backtest_end_str}\n"
     f"- Top N stocks: {TOP_N_STOCKS}\n"
     f"- Rebalance: every {REBALANCE_DAYS} days\n"
+    f"- Stop-loss: {_stop_loss_label}\n"
     f"- Device: {DEVICE_NAME}\n"
     f"- Mixed precision: {USE_AMP}"
 )
@@ -213,6 +270,10 @@ st.sidebar.markdown(
 
 if not selected_strategies:
     st.info("Select at least one strategy from the sidebar.")
+    st.stop()
+
+if backtest_end_date <= backtest_start_date:
+    st.info("Fix the backtest date range in the sidebar before running.")
     st.stop()
 
 run_btn = st.button("Run Simulation", type="primary", width="stretch")
@@ -306,9 +367,12 @@ if run_btn:
                         feature_data=feature_data,
                         price_data=price_data,
                         model=model if opts.get("use_adaptive") else None,
+                        start=backtest_start_str,
+                        end=backtest_end_str,
                         use_sentiment=opts["use_sentiment"],
                         use_adaptive=opts.get("use_adaptive", False),
                         retrain_every=opts.get("retrain", 0),
+                        stop_loss_pct=stop_loss_pct_value if strat_name in stop_loss_strategies else None,
                         progress_callback=_bt_progress,
                     )
                 st.code(buf.getvalue(), language="text")
@@ -317,8 +381,16 @@ if run_btn:
             if run_benchmarks:
                 bt_bar.progress(0.95, text="Running benchmarks...")
                 with capture_stdout() as buf:
-                    completed["SPY Buy-and-Hold"] = run_spy_bah(spy_returns)
-                    completed["Equal-Weight"] = run_equal_weight(price_data)
+                    completed["SPY Buy-and-Hold"] = run_spy_bah(
+                        spy_returns,
+                        start=backtest_start_str,
+                        end=backtest_end_str,
+                    )
+                    completed["Equal-Weight"] = run_equal_weight(
+                        price_data,
+                        start=backtest_start_str,
+                        end=backtest_end_str,
+                    )
                 st.code(buf.getvalue(), language="text")
 
             bt_bar.progress(1.0, text="All backtests complete")
@@ -730,9 +802,16 @@ else:
                 with col_summary:
                     n_buys = (trade_df["action"] == "BUY").sum()
                     n_sells = (trade_df["action"] == "SELL").sum()
+                    n_stops = (trade_df["action"] == "STOP").sum()
+                    summary_bits = [
+                        f"**{n_buys}** buys",
+                        f"**{n_sells}** sells",
+                    ]
+                    if n_stops:
+                        summary_bits.append(f"**{n_stops}** stop-outs")
                     st.markdown(
                         f"**{len(trade_df)}** trades total: "
-                        f"**{n_buys}** buys, **{n_sells}** sells"
+                        + ", ".join(summary_bits)
                     )
                 with col_download:
                     csv_data = trade_df.to_csv(index=False)

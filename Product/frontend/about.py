@@ -10,7 +10,6 @@ from backend.config import (
     RAW_TWEETS_DIR,
     SOCIAL_SENTIMENT_DIR,
     TICKERS,
-    TRADE_LOG_PATH,
 )
 
 st.title("Adaptive Fusion POC")
@@ -32,7 +31,7 @@ def count_files(directory, pattern="*.csv"):
     return len(list(directory.glob(pattern)))
 
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.metric("Raw News Files", f"{count_files(RAW_NEWS_DIR)} / {len(TICKERS)}")
@@ -43,21 +42,21 @@ with col2:
     st.metric("Tweet Sentiment Files", f"{count_files(SOCIAL_SENTIMENT_DIR)} / {len(TICKERS)}")
 
 with col3:
-    st.metric("Trade Log", "Ready" if TRADE_LOG_PATH.exists() else "Missing")
-    st.metric("Metrics Summary", "Ready" if METRICS_PATH.exists() else "Missing")
-
-with col4:
-    if TRADE_LOG_PATH.exists():
-        try:
-            df_tl = pd.read_csv(TRADE_LOG_PATH)
-            dates = pd.to_datetime(df_tl["date"])
-            st.metric("Total Trades Logged", len(df_tl))
-            st.metric("Simulation Period", f"{dates.min().date()} to {dates.max().date()}")
-        except Exception:
-            st.metric("Trade Log", "Error reading")
+    # Scan processed sentiment CSVs for the overall data date range
+    _all_dates = []
+    for _dir in (NEWS_SENTIMENT_DIR, SOCIAL_SENTIMENT_DIR):
+        if _dir.exists():
+            for _csv in _dir.glob("*.csv"):
+                try:
+                    _dates = pd.read_csv(_csv, usecols=["date"])["date"]
+                    _all_dates.extend(_dates.tolist())
+                except Exception:
+                    pass
+    if _all_dates:
+        _parsed = pd.to_datetime(_all_dates)
+        st.metric("Data Available", f"{_parsed.min().date()} to {_parsed.max().date()}")
     else:
-        st.metric("Total Trades Logged", "--")
-        st.metric("Simulation Period", "--")
+        st.metric("Data Available", "--")
 
 st.divider()
 
@@ -96,7 +95,7 @@ with c1:
         "**Data Collection**\n"
         "- Launch GDELT news scraper for any date range and ticker subset\n"
         "- Launch Twitter/X scraper in a controlled browser session\n"
-        "- Monitor live stdout logs as scraping progresses"
+        "- Monitor live logs as scraping progresses"
     )
 with c2:
     st.markdown(

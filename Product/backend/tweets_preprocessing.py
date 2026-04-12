@@ -1,6 +1,6 @@
 """Tweet preprocessing and FIN-RoBERTa classification.
 
-Replicates the Wilksch & Abramova (2023) cleaning pipeline from
+Replicates the cleaning pipeline from
 preprocessing/tweets_preprocessing_labelling.ipynb.
 
 Pipeline per ticker:
@@ -138,6 +138,7 @@ def filter_dataframe(df):
     Returns the filtered DataFrame (rows may be dropped but no text
     cleaning for the model is done here).
     """
+    df = df.copy()
     n_raw = len(df)
 
     # 1. Remove messaging-platform spam
@@ -258,8 +259,9 @@ def _tweet_ticker(ticker):
 def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
     """Classify tweets and save daily sentiment CSVs.
 
-    Checks existing processed data and only scores raw rows newer than
-    the latest processed date, then appends the new daily aggregates.
+    Only scores raw rows that map to NYSE session dates not yet present
+    in the processed output, so re-running after a scrape (forwards or
+    backwards in time) only sends genuinely new data through FIN-RoBERTa.
 
     Parameters
     ----------
@@ -290,36 +292,40 @@ def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
         print(f"\n--- {ticker} tweets ---")
         print(f"  Raw rows: {len(df)}")
 
-        # ---- Check existing processed data ----
-        out_path = SOCIAL_SENTIMENT_DIR / f"{tweet_ticker}_tweets_sentiment_daily.csv"
-        existing_daily = None
-        latest_processed = None
-
-        if out_path.exists():
-            existing_daily = pd.read_csv(out_path)
-            if "date" in existing_daily.columns and len(existing_daily) > 0:
-                latest_processed = pd.to_datetime(existing_daily["date"]).max()
-                print(f"  Processed data up to: {latest_processed.date()}")
-
-        # ---- Filter raw data to only new rows ----
         if "post_date" not in df.columns:
             print("  [SKIP] missing 'post_date' column")
             continue
 
-        df["_parsed_date"] = pd.to_datetime(df["post_date"], utc=True, errors="coerce")
+        # ---- Load already-processed session dates ----
+        out_path = SOCIAL_SENTIMENT_DIR / f"{tweet_ticker}_tweets_sentiment_daily.csv"
+        existing = None
+        processed_dates = set()
 
-        if latest_processed is not None:
-            cutoff = pd.Timestamp(latest_processed, tz="UTC")
-            df = df[df["_parsed_date"] > cutoff]
-            if df.empty:
-                print(f"  Already up to date ({len(existing_daily)} daily rows)")
-                continue
-            print(f"  New rows to process: {len(df)}")
+        if out_path.exists():
+            existing = pd.read_csv(out_path)
+            if not existing.empty and "date" in existing.columns:
+                processed_dates = set(existing["date"].astype(str))
+                print(f"  Already processed: {len(processed_dates)} daily sessions")
 
-        df = df.drop(columns=["_parsed_date"])
+        # ---- Map every raw row to its NYSE session (fast, no model) ----
+        df["_dt"] = pd.to_datetime(df["post_date"], utc=True, errors="coerce")
+        df = df.dropna(subset=["_dt"])
+        df["_session"] = assign_market_close_session(df["_dt"])
+
+        # Keep only rows whose session date hasn't been processed yet
+        df = df[~df["_session"].isin(processed_dates)]
+        if df.empty:
+            print(f"  Already up to date ({len(processed_dates)} daily sessions)")
+            continue
+
+        new_sessions = df["_session"].nunique()
+        print(f"  New rows to classify: {len(df)} ({new_sessions} sessions)")
 
         # DataFrame-level filtering
         df = filter_dataframe(df)
+        if df.empty:
+            print("  No tweets left after filtering")
+            continue
 
         # Text-level cleaning for model
         df["cleaned_body"] = df["body"].apply(
@@ -337,31 +343,29 @@ def classify_tweets(tickers, tokenizer, model, device, batch_size=16):
             df["cleaned_body"].tolist(), tokenizer, model, device, batch_size,
         )
         df = df.dropna(subset=["sentiment"])
-
-        # Assign to NYSE session via 16:00 ET cutoff
-        df["trade_date"] = assign_market_close_session(df["post_date"])
         df["sentiment"] = df["sentiment"].astype(float).clip(-1, 1)
 
         # Aggregate to daily
-        new_daily = df.groupby("trade_date").agg(**{
+        engagement_cols = {
+            f"total_{c}": pd.NamedAgg(column=c, aggfunc="sum")
+            for c in ("replies", "retweets", "likes")
+            if c in df.columns
+        }
+        new_daily = df.groupby("_session").agg(**{
             "avg_sentiment": pd.NamedAgg(column="sentiment", aggfunc="mean"),
-            **{
-                f"total_{c}": pd.NamedAgg(column=c, aggfunc="sum")
-                for c in ("replies", "retweets", "likes")
-                if c in df.columns
-            },
-        }).reset_index().rename(columns={"trade_date": "date"})
+            **engagement_cols,
+        }).reset_index().rename(columns={"_session": "date"})
 
         new_daily["avg_sentiment"] = new_daily["avg_sentiment"].round(4)
 
-        # ---- Merge with existing processed data ----
-        if existing_daily is not None and len(existing_daily) > 0:
-            combined = pd.concat([existing_daily, new_daily], ignore_index=True)
-            # For overlapping dates (boundary), keep the new computation
-            combined = combined.drop_duplicates(subset=["date"], keep="last")
+        # ---- Append to existing (no overlap by construction) ----
+        if existing is not None and not existing.empty:
+            # Drop row_count if left over from a previous version
+            existing = existing.drop(columns=["row_count"], errors="ignore")
+            combined = pd.concat([existing, new_daily], ignore_index=True)
         else:
             combined = new_daily
 
         combined = combined.sort_values("date").reset_index(drop=True)
         combined.to_csv(out_path, index=False)
-        print(f"  Saved {len(combined)} daily rows -> {out_path.name} (+{len(new_daily)} new)")
+        print(f"  Saved {len(combined)} daily rows -> {out_path.name}")

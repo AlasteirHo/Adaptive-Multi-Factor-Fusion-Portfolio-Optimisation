@@ -48,6 +48,7 @@ class BacktestResult:
     trade_log:         List[Dict]   = dc_field(default_factory=list)
     rebalance_dates:   List         = dc_field(default_factory=list)
     metrics:           Dict         = dc_field(default_factory=dict)
+    stop_out_count:    int          = 0
 
     def compute_metrics(self):
         daily_returns = self.returns_series.dropna()
@@ -105,18 +106,25 @@ def run_backtest(name, feature_data, price_data,
                  model=None, start=BACKTEST_START, end=BACKTEST_END,
                  initial_nav=INITIAL_NAV, top_n=TOP_N_STOCKS,
                  use_sentiment=True, use_adaptive=True, static_weights=None,
-                 retrain_every=0, progress_callback=None):
+                 retrain_every=0, stop_loss_pct=None,
+                 progress_callback=None):
     """
     Run a strategy backtest.
 
     Parameters
     ----------
+    stop_loss_pct : float | None
+        Per-position stop-loss threshold. If set, liquidate any held position
+        whose intraday Low falls below entry_price * (1 - stop_loss_pct). The
+        fill is at the stop trigger with one-way slippage applied. Cash is
+        held until the next rebalance.
     progress_callback : callable, optional
         Called with (day_index, total_days, date, nav) after each trading day.
     """
     static_weights = static_weights or STATIC_WEIGHTS
     result = BacktestResult(name=name)
     close_panel = _build_panel(price_data, start, end, "Close")
+    low_panel = _build_panel(price_data, start, end, "Low") if stop_loss_pct else None
     trading_days = close_panel.index
     portfolio_nav = initial_nav
     current_holdings = {}
@@ -128,8 +136,41 @@ def run_backtest(name, feature_data, price_data,
     rebalance_date_list = []
     days_since_rebalance = REBALANCE_DAYS
     days_since_retrain = 0
+    entry_prices = {}     # {ticker: price} re-anchored at each rebalance
+    n_stop_outs = 0       # total stop-outs across the backtest
 
     for day_index, date in enumerate(trading_days):
+        # --- Stop-loss check (runs before NAV mark-to-market) -------------
+        # On non-rebalance days, liquidate any position whose intraday Low
+        # has breached entry * (1 - stop_loss_pct). Fill at the stop price,
+        # cash held until next rebalance.
+        if stop_loss_pct and current_holdings and days_since_rebalance < REBALANCE_DAYS:
+            triggered = []
+            for ticker, current_shares in list(current_holdings.items()):
+                if ticker not in entry_prices:
+                    continue
+                if ticker not in low_panel.columns:
+                    continue
+                day_low = low_panel.loc[date, ticker]
+                if np.isnan(day_low):
+                    continue
+                stop_trigger = entry_prices[ticker] * (1.0 - stop_loss_pct)
+                if day_low <= stop_trigger:
+                    fill_price = stop_trigger * (1 - SLIPPAGE_BPS / 10_000)
+                    sell_proceeds = current_shares * fill_price
+                    available_cash += sell_proceeds - transaction_costs(
+                        sell_proceeds, current_shares)
+                    trade_records.append({
+                        "date": date, "ticker": ticker, "action": "STOP",
+                        "shares": current_shares, "price": fill_price,
+                        "value": sell_proceeds,
+                    })
+                    triggered.append(ticker)
+                    n_stop_outs += 1
+            for ticker in triggered:
+                del current_holdings[ticker]
+                entry_prices.pop(ticker, None)
+
         portfolio_nav = available_cash + sum(
             current_shares * close_panel.loc[date, ticker]
             for ticker, current_shares in current_holdings.items()
@@ -274,6 +315,22 @@ def run_backtest(name, feature_data, price_data,
             if attention_weights:
                 attention_records.append({"date": date, **attention_weights})
 
+            # Re-anchor stop-loss reference prices at every rebalance. Each
+            # held position receives a fresh entry price (the rebalance
+            # execution price), so the stop buffer resets per period.
+            if stop_loss_pct:
+                entry_prices = {}
+                for ticker in current_holdings:
+                    anchor_price = get_execution_price(
+                        date, ticker, price_data, side="buy")
+                    if anchor_price is None:
+                        anchor_price = (
+                            float(close_panel.loc[date, ticker])
+                            if ticker in close_panel.columns else None
+                        )
+                    if anchor_price is not None:
+                        entry_prices[ticker] = anchor_price
+
         days_since_rebalance += 1
         days_since_retrain += 1
 
@@ -292,12 +349,14 @@ def run_backtest(name, feature_data, price_data,
     result.attention_history = attention_records
     result.trade_log = trade_records
     result.rebalance_dates = rebalance_date_list
+    result.stop_out_count = n_stop_outs
     result.compute_metrics()
     m = result.metrics
+    stop_suffix = f" | Stops={n_stop_outs}" if stop_loss_pct else ""
     print(f"[{name:20s}] Sharpe={m.get('Sharpe Ratio', 0):+.3f} | "
           f"Return={m.get('Total Return', 0) * 100:+.1f}% | "
           f"MaxDD={m.get('Max Drawdown', 0) * 100:.1f}% | "
-          f"{len(trade_records)} trades")
+          f"{len(trade_records)} trades{stop_suffix}")
     return result
 
 

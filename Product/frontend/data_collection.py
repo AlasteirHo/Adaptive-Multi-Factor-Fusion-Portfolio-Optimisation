@@ -112,8 +112,6 @@ def _render_scraper_panel(title, state_prefix, runner_script, default_tickers,
                           extra_notes=""):
     """Render a single scraper control panel. Does NOT call st.rerun()."""
     st.subheader(title)
-    if extra_notes:
-        st.caption(extra_notes)
 
     running = _is_running(state_prefix)
 
@@ -174,6 +172,9 @@ def _render_scraper_panel(title, state_prefix, runner_script, default_tickers,
         st.session_state[f"{state_prefix}_log"].append("[Stopped by user]")
         needs_rerun = True
 
+    if extra_notes:
+        st.caption(extra_notes)
+
     # Drain queue every render (picks up output even after process exits)
     _drain_queue(state_prefix)
 
@@ -181,7 +182,7 @@ def _render_scraper_panel(title, state_prefix, runner_script, default_tickers,
     log_text = "\n".join(log_lines) if log_lines else "No output yet."
     st.session_state[f"{state_prefix}_log_area"] = log_text
     st.text_area(
-        "Log output", value=log_text, height=300,
+        "Log output", height=300,
         key=f"{state_prefix}_log_area", disabled=True, label_visibility="collapsed",
     )
 
@@ -215,7 +216,9 @@ with col_right:
         extra_notes=(
             "Opens a Chrome browser and scrapes tweets for each ticker. "
             "Credentials are read from the .env file automatically. "
-            "Requires an active internet connection and Chrome installed."
+            "Requires an active internet connection and Chrome installed. "
+            "Keep this browser tab focused while scraping is in progress "
+            "for maximum performance; background tabs may be throttled by the OS."
         ),
     )
 
@@ -291,7 +294,7 @@ sent_log_lines = st.session_state["sentiment_log"]
 sent_log_text = "\n".join(sent_log_lines) if sent_log_lines else "No output yet."
 st.session_state["sentiment_log_area"] = sent_log_text
 st.text_area(
-    "Log output", value=sent_log_text, height=300,
+    "Log output", height=300,
     key="sentiment_log_area", disabled=True, label_visibility="collapsed",
 )
 

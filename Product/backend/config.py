@@ -97,6 +97,13 @@ SLIPPAGE_BPS      = 5
 SEC_FEE_RATE      = 0.0000278
 FINRA_TAF_PER_SH  = 0.000166
 
+# ---- Stop-loss ----
+# Default per-position stop-loss threshold. Liquidate a held position if its
+# intraday Low falls below entry_price * (1 - STOP_LOSS_PCT). The 1% default is
+# tighter than a typical 10% because the 10-day rebalance interval and low
+# daily volatility of the large-cap universe would otherwise rarely trigger.
+STOP_LOSS_PCT     = 0.01
+
 # ---- Technical indicator parameters ----
 RSI_PERIOD        = 14
 MOMENTUM_PERIOD   = 20

@@ -62,8 +62,9 @@ def preprocess_headline(title):
 def classify_news(tickers, tokenizer, model, device, batch_size=16):
     """Classify GDELT news headlines and save daily sentiment CSVs.
 
-    Checks existing processed data and only scores raw rows newer than
-    the latest processed date, then appends the new daily aggregates.
+    Only scores raw rows that map to NYSE session dates not yet present
+    in the processed output, so re-running after a scrape (forwards or
+    backwards in time) only sends genuinely new data through FIN-RoBERTa.
 
     Parameters
     ----------
@@ -90,29 +91,33 @@ def classify_news(tickers, tokenizer, model, device, batch_size=16):
         print(f"\n--- {ticker} news ---")
         print(f"  Raw rows: {len(df)}")
 
-        # ---- Check existing processed data ----
+        # ---- Load already-processed session dates ----
         out_path = NEWS_SENTIMENT_DIR / f"{ticker}_news_sentiment_daily.csv"
-        existing_daily = None
-        latest_processed = None
+        existing = None
+        processed_dates = set()
 
         if out_path.exists():
-            existing_daily = pd.read_csv(out_path)
-            if "date" in existing_daily.columns and len(existing_daily) > 0:
-                latest_processed = pd.to_datetime(existing_daily["date"]).max()
-                print(f"  Processed data up to: {latest_processed.date()}")
+            existing = pd.read_csv(out_path)
+            if not existing.empty and "date" in existing.columns:
+                processed_dates = set(existing["date"].astype(str))
+                print(f"  Already processed: {len(processed_dates)} daily sessions")
 
-        # ---- Filter raw data to only new rows ----
-        df["_parsed_date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+        # ---- Map every raw row to its NYSE session (fast, no model) ----
+        df["_dt"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+        df = df.dropna(subset=["_dt"])
+        df["_session"] = assign_market_close_session(df["_dt"])
 
-        if latest_processed is not None:
-            cutoff = pd.Timestamp(latest_processed, tz="UTC")
-            df = df[df["_parsed_date"] > cutoff]
-            if df.empty:
-                print(f"  Already up to date ({len(existing_daily)} daily rows)")
-                continue
-            print(f"  New rows to process: {len(df)}")
+        # Keep only rows whose session date hasn't been processed yet
+        df = df[~df["_session"].isin(processed_dates)]
+        if df.empty:
+            print(f"  Already up to date ({len(processed_dates)} daily sessions)")
+            continue
+
+        new_sessions = df["_session"].nunique()
+        print(f"  New rows to classify: {len(df)} ({new_sessions} sessions)")
 
         # Clean
+        df = df.copy()
         df["clean_headline"] = df["headline"].apply(preprocess_headline)
         valid = df.dropna(subset=["clean_headline"]).copy()
         if valid.empty:
@@ -124,29 +129,25 @@ def classify_news(tickers, tokenizer, model, device, batch_size=16):
         valid["sentiment_score"] = score_texts(
             valid["clean_headline"].tolist(), tokenizer, model, device, batch_size,
         )
-
-        # Assign to NYSE session via 16:00 ET cutoff
-        valid["datetime"] = pd.to_datetime(valid["date"], utc=True)
-        valid["trade_date"] = assign_market_close_session(valid["datetime"])
         valid["sentiment_score"] = valid["sentiment_score"].astype(float).clip(-1, 1)
 
         # Aggregate to daily avg_sentiment
         new_daily = (
-            valid.groupby("trade_date")["sentiment_score"]
+            valid.groupby("_session")["sentiment_score"]
             .mean()
             .reset_index()
-            .rename(columns={"trade_date": "date", "sentiment_score": "avg_sentiment"})
+            .rename(columns={"_session": "date", "sentiment_score": "avg_sentiment"})
         )
         new_daily["avg_sentiment"] = new_daily["avg_sentiment"].round(4)
 
-        # ---- Merge with existing processed data ----
-        if existing_daily is not None and len(existing_daily) > 0:
-            combined = pd.concat([existing_daily, new_daily], ignore_index=True)
-            # For overlapping dates (boundary), keep the new computation
-            combined = combined.drop_duplicates(subset=["date"], keep="last")
+        # ---- Append to existing (no overlap by construction) ----
+        if existing is not None and not existing.empty:
+            # Drop row_count if left over from a previous version
+            existing = existing.drop(columns=["row_count"], errors="ignore")
+            combined = pd.concat([existing, new_daily], ignore_index=True)
         else:
             combined = new_daily
 
         combined = combined.sort_values("date").reset_index(drop=True)
         combined.to_csv(out_path, index=False)
-        print(f"  Saved {len(combined)} daily rows -> {out_path.name} (+{len(new_daily)} new)")
+        print(f"  Saved {len(combined)} daily rows -> {out_path.name}")
