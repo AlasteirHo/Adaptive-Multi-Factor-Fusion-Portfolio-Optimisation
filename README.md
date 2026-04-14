@@ -41,7 +41,7 @@ Both Adaptive variants (Walk-Forward and Fixed) produced identical base results,
 The system performs the following pipeline:
 
 1. **Data Collection** -- Scrapes financial news headlines from the GDELT API and tweets from X/Twitter via Selenium-based browser automation for 20 S&P 500 stocks across 7 sectors
-2. **Sentiment Model** -- Fine-tunes a custom FIN-RoBERTa classifier from RoBERTa-base on four financial sentiment datasets (99.3% accuracy on Financial PhraseBank)
+2. **Sentiment Model** -- Fine-tunes a custom FIN-RoBERTa classifier from RoBERTa-base on four financial sentiment datasets (99.6% accuracy on Financial PhraseBank)
 3. **Preprocessing** -- Cleans, deduplicates, and labels data using the custom model, then aggregates into daily sentiment scores per ticker
 4. **Adaptive Fusion & Portfolio Optimisation** -- A PyTorch attention network produces context-dependent factor weights over 8 signals, integrated into a Black-Litterman framework and optimised via Sharpe ratio maximisation
 5. **Walk-Forward Backtest** -- Evaluates strategies over ~252 trading days with realistic transaction costs (SEC/FINRA fees + 5 bps slippage)
@@ -294,7 +294,7 @@ A RoBERTa-base model (125M parameters) fine-tuned for three-class financial sent
 - **Hugging Face:** [alasteirho/FIN-RoBERTa-Custom](https://huggingface.co/alasteirho/FIN-RoBERTa-Custom)
 - **Labels:** negative, neutral, positive
 - **Training data:** Financial PhraseBank, Twitter Financial News Sentiment, FiQA 2018, SemEval 2017 Task 5
-- **Benchmark:** 99.3% accuracy on Financial PhraseBank (sentences_allagree, 2,264 samples)
+- **Benchmark:** 99.6% accuracy on Financial PhraseBank (sentences_allagree, 2,264 samples)
 
 ## Key Design Decisions
 
