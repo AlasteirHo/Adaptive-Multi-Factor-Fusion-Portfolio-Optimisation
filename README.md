@@ -10,38 +10,30 @@ A context-conditioned attention network for adaptive multi-source sentiment fusi
 
 ## Key Results
 
-### Base Backtest (Jan 2025 to Jan 2026, ~252 trading days)
-
 | Strategy | Sharpe | Ann. Return | Ann. Vol | Max Drawdown | Calmar | Total Return |
 |----------|--------|-------------|----------|-------------|--------|-------------|
-| **Adaptive (WF)** | **1.51** | 29.29% | 19.45% | -10.70% | 2.74 | 28.76% |
-| **Adaptive (Fixed)** | **1.51** | 29.29% | 19.45% | -10.70% | 2.74 | 28.76% |
+| **Adaptive (Fixed+Stop)** | **3.35** | **31.83%** | **9.51%** | **-5.30%** | **6.01** | **31.26%** |
+| Adaptive (WF) | 1.51 | 29.29% | 19.45% | -10.70% | 2.74 | 28.76% |
+| Adaptive (Fixed) | 1.51 | 29.29% | 19.45% | -10.70% | 2.74 | 28.76% |
 | Equal-Weight | 1.12 | 21.76% | 19.46% | -18.44% | 1.18 | 21.47% |
 | Price-Only | 1.02 | 20.70% | 20.38% | -19.56% | 1.06 | 20.34% |
 | SPY Buy-and-Hold | 0.75 | 14.84% | 19.84% | -18.76% | 0.79 | 14.54% |
 | Static-Fusion | 0.47 | 9.99% | 21.21% | -20.02% | 0.50 | 9.83% |
 
-### Stop-Loss Ablation (Dec 2024 to Dec 2025)
-
-| Strategy | Sharpe | Ann. Return | Ann. Vol | Max Drawdown | Calmar | Total Return |
-|----------|--------|-------------|----------|-------------|--------|-------------|
-| **Adaptive (Fixed+Stop)** | **3.35** | 31.83% | 9.51% | **-5.30%** | **6.01** | 31.26% |
-| Adaptive (Fixed) | 1.51 | 29.31% | 19.45% | -10.70% | 2.74 | 28.79% |
-
-Adding a 1% per-position stop-loss (based on Han, Zhou & Zhu, 2016) to the Adaptive strategy more than doubled the Sharpe ratio (1.51 to 3.35) by cutting annualised volatility in half (19.45% to 9.51%) and halving the maximum drawdown (-10.70% to -5.30%), while slightly improving total return. 86 stop-outs were triggered during the backtest period.
+The top-performing strategy, Adaptive (Fixed+Stop), adds a 1% per-position stop-loss (based on Han, Zhou & Zhu, 2016) to the adaptive fusion model. This more than doubled the Sharpe ratio (1.51 to 3.35) by cutting annualised volatility in half (19.45% to 9.51%) and halving maximum drawdown (-10.70% to -5.30%), while slightly improving total return. 86 stop-outs were triggered during the backtest period.
 
 Both Adaptive variants (Walk-Forward and Fixed) produced identical base results, demonstrating that the pre-trained attention weights generalised robustly beyond the training period.
 
 ### Portfolio NAV Performance
 
 <p align="center">
-  <img src="diagrams/1_nav_comparison.png" alt="Portfolio NAV comparison across all six strategies" width="800"/>
+  <img src="Diagrams/1_nav_comparison.png" alt="Portfolio NAV comparison across all six strategies" width="800"/>
 </p>
 
 ### Drawdown Comparison
 
 <p align="center">
-  <img src="diagrams/2_drawdown_comparison.png" alt="Drawdown profiles for all strategies" width="800"/>
+  <img src="Diagrams/2_drawdown_comparison.png" alt="Drawdown profiles for all strategies" width="800"/>
 </p>
 
 ## Overview
@@ -61,7 +53,7 @@ The system performs the following pipeline:
 ### Portfolio Optimisation Pipeline
 
 <p align="center">
-  <img src="diagrams/Portfolio_Pipeline.png" alt="Portfolio optimisation pipeline" width="800"/>
+  <img src="Diagrams/Portfolio_Pipeline.png" alt="Portfolio optimisation pipeline" width="800"/>
 </p>
 
 Close prices feed into technical indicator computation and a shrunk 60-day covariance matrix. News and tweet sentiment scores join the technical factors to form 8 Z-scored signals. The attention network, conditioned on volatility regime and sector context, produces adaptive factor weights that fuse the signals into a composite alpha score. These alpha scores become views in the Black-Litterman framework, which combines market equilibrium priors with the model's views to produce posterior expected returns. A Sharpe ratio maximiser (SLSQP) then determines optimal portfolio weights.
@@ -69,7 +61,7 @@ Close prices feed into technical indicator computation and a shrunk 60-day covar
 ### Adaptive Fusion Network
 
 <p align="center">
-  <img src="diagrams/AdaptiveFusionArchitecture.png" alt="Attention network architecture" width="500"/>
+  <img src="Diagrams/AdaptiveFusionArchitecture.png" alt="Attention network architecture" width="500"/>
 </p>
 
 The context-conditioned attention network takes 10 context inputs (volatility regime tercile, news/social intensity, 7 sector one-hots) and produces 8 factor weights via softmax:
@@ -87,7 +79,7 @@ The network is trained by maximising the information coefficient (IC) between pr
 ### Strategy Hierarchy
 
 <p align="center">
-  <img src="diagrams/Strategies.png" alt="Strategy hierarchy from S1 (SPY) to S5 (Adaptive NN Fusion)" width="700"/>
+  <img src="Diagrams/Strategies.png" alt="Strategy hierarchy from S1 (SPY) to S5 (Adaptive NN Fusion)" width="700"/>
 </p>
 
 Five strategies of increasing complexity are compared to isolate the contribution of each component: market benchmark (S1), equal-weight diversification (S2), technical-only factors (S3), static sentiment fusion (S4), and adaptive NN-based fusion (S5).
@@ -95,7 +87,7 @@ Five strategies of increasing complexity are compared to isolate the contributio
 ### Factor Attribution
 
 <p align="center">
-  <img src="diagrams/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
+  <img src="Diagrams/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
 </p>
 
 The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.0%), 5-day reversal (20.8%), and abnormal volume (15.5%) account for 68.3% of the attention budget. News sentiment (8.7%) and social sentiment (4.6%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
@@ -103,7 +95,7 @@ The attention network allocates the majority of weight to risk-based technical f
 ### Volatility Regime Adaptation
 
 <p align="center">
-  <img src="diagrams/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
+  <img src="Diagrams/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
 </p>
 
 The model adapts its factor weighting based on the prevailing volatility regime. In high-volatility periods, the network increases weight on idiosyncratic volatility and RSI (mean-reversion signals), while in low-volatility periods it allocates relatively more to sentiment and momentum signals. This regime-conditional behaviour is learned end-to-end without explicit rules.
@@ -111,7 +103,7 @@ The model adapts its factor weighting based on the prevailing volatility regime.
 ### Bootstrap Confidence Intervals
 
 <p align="center">
-  <img src="diagrams/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
+  <img src="Diagrams/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
 </p>
 
 Statistical robustness is assessed via 2,000 stationary bootstrap resamples with geometric block length of 10 days. While the Adaptive strategies show higher point estimates across all metrics, the 95% confidence intervals overlap across strategies, reflecting the inherent uncertainty of a single 252-day evaluation window.
@@ -165,38 +157,37 @@ Composite alpha scores are integrated into a **Black-Litterman** framework (tau=
 
 ```
 Adaptive-Fusion-For-Stock-Portfolio-Optimization/
-|-- scrapers/
+|-- Scrapers/
 |   |-- GDELTscraper.py              # GDELT news headline collection
 |   +-- twitter_scraper.py           # Selenium-based tweet collection
-|-- preprocessing/
-|   |-- news_eda.ipynb                # News exploratory data analysis
+|-- Preprocessing/
 |   |-- news_preprocessing_labelling.ipynb
-|   |-- tweets_eda.ipynb              # Tweet exploratory data analysis
 |   +-- tweets_preprocessing_labelling.ipynb
 |-- Sentiment_Model/
 |   |-- RoBERTa-Train/                # Fine-tuning scripts and training data
 |   +-- model_evaluation.ipynb        # FIN-RoBERTa benchmark evaluation
-|-- portfolio_optimizer/
+|-- Portfolio_Optimizer/
 |   |-- Adaptive_Fusion_POC.ipynb     # Main research notebook (base backtest)
 |   |-- Adaptive_Fusion_POC_StopLoss.ipynb  # Stop-loss ablation notebook
 |   |-- fusion_network.pt             # Pre-trained model weights (Fixed)
-|   |-- fusion_network_dynamic.pt     # Walk-forward model weights
-|   |-- outputs/                      # Figures and CSV results (base)
-|   +-- outputs2/                     # Figures and CSV results (stop-loss)
-|-- Product/
-|   |-- backend/                      # Python package (9 modules)
+|   |-- fusion_network2.pt            # Walk-forward model weights
+|   +-- outputs/                      # Figures and CSV results
+|-- Dashboard/
+|   |-- backend/                      # Python package (11 modules)
 |   |   |-- config.py                 #   Centralised hyperparameters
 |   |   |-- model.py                  #   Attention network and training
 |   |   |-- backtest.py               #   Walk-forward backtest engine
 |   |   |-- optimizer.py              #   Black-Litterman and Sharpe MVO
 |   |   |-- sentiment.py              #   FIN-RoBERTa inference wrapper
 |   |   |-- features.py               #   Technical factor engineering
-|   |   +-- data.py                   #   Data loading utilities
+|   |   |-- data.py                   #   Data loading utilities
+|   |   |-- news_preprocessing.py     #   News data preprocessing
+|   |   +-- tweets_preprocessing.py   #   Tweet data preprocessing
 |   |-- frontend/                     # Streamlit web application
 |   |   |-- about.py                  #   System status dashboard
 |   |   |-- data_collection.py        #   Data acquisition interface
 |   |   +-- portfolio_simulation.py   #   Portfolio simulation page
-|   |-- runners/                      # Subprocess managers
+|   |-- services/                     # Subprocess managers
 |   |   |-- gdelt_runner.py           #   News scraper execution
 |   |   |-- twitter_runner.py         #   Tweet scraper execution
 |   |   +-- sentiment_runner.py       #   Sentiment scoring execution
@@ -205,6 +196,7 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 |   |   |-- test_model.py             #   13 tests for attention network
 |   |   +-- test_optimizer.py         #   17 tests for BL and MVO
 |   +-- main.py                       # Streamlit application entry point
+|-- Diagrams/                         # Architecture diagrams and result figures
 |-- Raw_Data/                         # Unprocessed scraper outputs
 |-- Processed_Data/                   # Daily sentiment CSV files
 |-- Report/                           # LaTeX dissertation and figures
@@ -257,37 +249,41 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 
 ### Step 1: Collect News Data
 ```bash
-python scrapers/GDELTscraper.py
+python Scrapers/GDELTscraper.py
 ```
 Collects news headlines via the GDELT Document API. Outputs to `Raw_Data/gdelt_news_data/`.
 
 ### Step 2: Collect Twitter Data
 ```bash
-python scrapers/twitter_scraper.py
+python Scrapers/twitter_scraper.py
 ```
 Scrapes cashtag-mentioning tweets via Selenium browser automation. Outputs to `Raw_Data/Tweets/`.
 
 ### Step 3: Preprocess and Label Data
-Run the Jupyter notebooks in `preprocessing/`:
+Run the Jupyter notebooks in `Preprocessing/`:
 - `news_preprocessing_labelling.ipynb` -- Clean, label with FIN-RoBERTa, aggregate to daily scores
 - `tweets_preprocessing_labelling.ipynb` -- Multi-stage filtering, label, aggregate to daily scores
 
 ### Step 4: Portfolio Optimisation and Backtest
 Run the main notebooks:
-- `portfolio_optimizer/Adaptive_Fusion_POC.ipynb` -- Trains the attention network, runs walk-forward backtest for all strategies, generates results and visualisations
-- `portfolio_optimizer/Adaptive_Fusion_POC_StopLoss.ipynb` -- Stop-loss ablation study on the best-performing adaptive strategy
+- `Portfolio_Optimizer/Adaptive_Fusion_POC.ipynb` -- Trains the attention network, runs walk-forward backtest for all strategies, generates results and visualisations
+- `Portfolio_Optimizer/Adaptive_Fusion_POC_StopLoss.ipynb` -- Stop-loss ablation study on the best-performing adaptive strategy
 
 ### Step 5: Run Tests
 ```bash
-cd Product
+cd Dashboard
 pytest tests/ -v
 ```
 
-### Step 6: Streamlit GUI (optional)
+### Step 6: Launch the Streamlit Dashboard
 ```bash
-cd Product
+cd Dashboard
 streamlit run main.py
 ```
+This starts the three-page interactive web application on `http://localhost:8501`. The dashboard includes:
+- **About** -- System status and GPU/model availability checks
+- **Data Collection** -- Run the GDELT and Twitter scrapers and sentiment labelling from the browser
+- **Portfolio Simulation** -- Configure and run a backtest with animated NAV playback and strategy comparison
 
 ## Models
 

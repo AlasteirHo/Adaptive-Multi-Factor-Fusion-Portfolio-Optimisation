@@ -10,9 +10,6 @@ transformers
 accelerate
 datasets
 
-# Portfolio Optimisation
-cvxpy
-
 # Financial Data
 yfinance
 exchange-calendars
@@ -20,12 +17,17 @@ exchange-calendars
 # Visualization
 matplotlib
 seaborn
+plotly
+
+# Product / Demo App
+streamlit
 
 # Jupyter
 jupyter
 ipykernel
 
-# Web Scraping
+# HTTP / Web Scraping
+requests
 selenium
 undetected-chromedriver
 
@@ -34,6 +36,12 @@ gdeltdoc
 
 # Language Detection
 lingua-language-detector
+
+# PDF Extraction
+PyMuPDF
+
+# Testing
+pytest
 
 # Utilities
 python-dotenv
