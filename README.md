@@ -1,4 +1,4 @@
-# Adaptive Multi-source Sentiment Fusion For Portfolio Optimisation
+# Adaptive Multi-Factor Fusion for Portfolio Optimisation Using Neural Attention
 
 A context-conditioned attention network for adaptive multi-source sentiment fusion in Black-Litterman portfolio optimisation. The system dynamically weights eight factor signals (news sentiment, social sentiment, and six technical indicators) based on volatility regime, data availability, and sector characteristics.
 
