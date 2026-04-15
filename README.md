@@ -2,10 +2,10 @@
 
 A context-conditioned attention network for adaptive multi-source sentiment fusion in Black-Litterman portfolio optimisation. The system dynamically weights eight factor signals (news sentiment, social sentiment, and six technical indicators) based on volatility regime, data availability, and sector characteristics.
 
-**Author:** Alasteir Ho Zhen Wei
-**Student ID:** 001295065
-**Institution:** University of Greenwich (COMP1682 Final Year Project)
-**Supervisor:** Dr Ali Jazdarreh
+**Author:** Alasteir Ho Zhen Wei  
+**Student ID:** 001295065  
+**Institution:** University of Greenwich (COMP1682 Final Year Project)  
+**Supervisor:** Dr Ali Jazdarreh  
 **Date:** April 2026
 
 ## Key Results
@@ -20,7 +20,7 @@ A context-conditioned attention network for adaptive multi-source sentiment fusi
 | SPY Buy-and-Hold | 0.75 | 14.84% | 19.84% | -18.76% | 0.79 | 14.54% |
 | Static-Fusion | 0.47 | 9.99% | 21.21% | -20.02% | 0.50 | 9.83% |
 
-The top-performing strategy, Adaptive (Fixed+Stop), adds a 1% per-position stop-loss to the adaptive fusion model. This more than doubled the Sharpe ratio (1.51 to 3.35) by cutting annualised volatility in half (19.45% to 9.51%) and halving maximum drawdown (-10.70% to -5.30%), while slightly improving total return. 86 stop-outs were triggered during the backtest period.
+The top-performing strategy, Adaptive (Fixed+Stop), adds a 1% per-position stop-loss (based on Han, Zhou & Zhu, 2016) to the adaptive fusion model. This more than doubled the Sharpe ratio (1.51 to 3.35) by cutting annualised volatility in half (19.45% to 9.51%) and halving maximum drawdown (-10.70% to -5.30%), while slightly improving total return. 86 stop-outs were triggered during the backtest period.
 
 Both Adaptive variants (Walk-Forward and Fixed) produced identical base results, demonstrating that the pre-trained attention weights generalised robustly beyond the training period.
 
