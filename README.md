@@ -302,7 +302,7 @@ A RoBERTa-base model (125M parameters) fine-tuned for three-class financial sent
 - **Walk-forward retraining:** The WF variant retrains the attention network at every rebalance (every 10 trading days) using a 3-month (63 trading day) rolling window with warm-starting.
 - **No sentiment forward-fill:** Missing sentiment days default to neutral (0) rather than carrying stale values forward; the attention network learns to rely on technical factors when sentiment coverage is sparse.
 - **Realistic costs:** SEC fee (0.278 bps on sells), FINRA TAF ($0.000166/share, capped at $8.30), and 5 bps one-way slippage on all trades.
-- **Stop-loss rule:** 1% per-position stop based on intraday low vs. entry price, informed by Han, Zhou & Zhu (2016) and Kaminski & Lo (2014).
+- **Stop-loss rule:** 1% per-position stop based on intraday low vs. entry price.
 - **Statistical robustness:** 2,000 stationary bootstrap resamples with geometric block length of 10 days for confidence intervals.
 
 ## Limitations
