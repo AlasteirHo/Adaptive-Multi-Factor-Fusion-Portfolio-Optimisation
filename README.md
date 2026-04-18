@@ -20,7 +20,7 @@ A context-conditioned attention network for adaptive multi-source sentiment fusi
 | SPY Buy-and-Hold | 0.75 | 14.84% | 19.84% | -18.76% | 0.79 | 14.54% |
 | Static-Fusion | 0.39 | 8.50% | 21.73% | -19.52% | 0.44 | 8.36% |
 
-The top-performing strategy, Adaptive (Fixed+Stop), adds a 2.4% per-position stop-loss (based on Han, Zhou & Zhu, 2016, and the mean intraday drawdown of the universe) to the adaptive fusion model. This nearly doubled the Sharpe ratio (1.32 to 2.54) by almost halving annualised volatility (21.08% to 11.78%) and reducing maximum drawdown by around 30% (-14.28% to -10.06%), while increasing total return. 64 stop-outs were triggered during the backtest period.
+The top-performing strategy, Adaptive (Fixed+Stop), adds a 2.4% per-position stop-loss (based on the mean intraday drawdown of the universe) to the adaptive fusion model. This nearly doubled the Sharpe ratio (1.32 to 2.54) by almost halving annualised volatility (21.08% to 11.78%) and reducing maximum drawdown by around 30% (-14.28% to -10.06%), while increasing total return. 64 stop-outs were triggered during the backtest period.
 
 Both Adaptive variants delivered comparable risk (volatility and maximum drawdown within 1-2 percentage points of each other), with Walk-Forward offering modestly higher Sharpe and total return through continuous retraining every 10 trading days. This indicates that the pre-trained attention weights already generalise well, and that retraining provides incremental rather than transformative improvements.
 
