@@ -1,7 +1,4 @@
-"""
-Feature engineering: technical indicators, z-scoring, and context features.
-Mirrors notebook cell 6.
-"""
+"""Feature engineering: technical indicators, z-scoring, and context features."""
 
 import numpy as np
 import pandas as pd

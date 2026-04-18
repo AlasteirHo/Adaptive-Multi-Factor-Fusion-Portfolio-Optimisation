@@ -1,7 +1,4 @@
-"""
-Backtest engine and benchmark strategies.
-Mirrors notebook cells 16 and 18.
-"""
+"""Backtest engine and benchmark strategies."""
 
 from dataclasses import dataclass, field as dc_field
 from typing import Dict, List
@@ -22,7 +19,7 @@ from .config import (
     STATIC_WEIGHTS,
     TOP_N_STOCKS,
 )
-from .model import get_composite_scores, train_model
+from .model import get_composite_scores, seed_rng, train_model
 from .optimizer import allocate
 
 
@@ -113,6 +110,10 @@ def run_backtest(name, feature_data, price_data,
 
     Parameters
     ----------
+    retrain_every : int
+        Walk-forward retraining interval in trading days. 0 = no retraining
+        during the backtest (pre-trained model used throughout). Mutually
+        exclusive with ``stop_loss_pct`` (see note below).
     stop_loss_pct : float | None
         Per-position stop-loss threshold. If set, liquidate any held position
         whose intraday Low falls below entry_price * (1 - stop_loss_pct). The
@@ -120,7 +121,25 @@ def run_backtest(name, feature_data, price_data,
         held until the next rebalance.
     progress_callback : callable, optional
         Called with (day_index, total_days, date, nav) after each trading day.
+
+    Notes
+    -----
+    Stop-loss is a post-training portfolio rule and is never interleaved
+    with walk-forward retraining. When both ``retrain_every > 0`` and
+    ``stop_loss_pct`` are requested, walk-forward retraining is disabled with
+    a warning and the pre-trained model is used for the entire backtest.
     """
+    seed_rng()
+
+    if stop_loss_pct is not None and retrain_every and retrain_every > 0:
+        print(
+            f"[{name}] WARNING: stop-loss is a post-training rule and cannot be "
+            f"combined with walk-forward retraining in the same run. Disabling "
+            f"walk-forward retraining; the pre-trained model will be used "
+            f"throughout."
+        )
+        retrain_every = 0
+
     static_weights = static_weights or STATIC_WEIGHTS
     result = BacktestResult(name=name)
     close_panel = _build_panel(price_data, start, end, "Close")
@@ -136,11 +155,10 @@ def run_backtest(name, feature_data, price_data,
     rebalance_date_list = []
     days_since_rebalance = REBALANCE_DAYS
     days_since_retrain = 0
-    entry_prices = {}     # {ticker: price} re-anchored at each rebalance
-    n_stop_outs = 0       # total stop-outs across the backtest
+    entry_prices = {}
+    n_stop_outs = 0
 
     for day_index, date in enumerate(trading_days):
-        # --- Stop-loss check (runs before NAV mark-to-market) -------------
         # On non-rebalance days, liquidate any position whose intraday Low
         # has breached entry * (1 - stop_loss_pct). Fill at the stop price,
         # cash held until next rebalance.
@@ -180,9 +198,11 @@ def run_backtest(name, feature_data, price_data,
 
         if days_since_rebalance >= REBALANCE_DAYS:
             days_since_rebalance = 0
-            # Always use t-1 signals; skip first day and rebalance on day 1
+
+            # Signals and position sizing use T-1 close (T close is unknown
+            # at T open); enforces no-look-ahead at rebalance.
             if day_index == 0:
-                days_since_rebalance = REBALANCE_DAYS  # trigger rebalance next day
+                days_since_rebalance = REBALANCE_DAYS
                 continue
             signal_date = trading_days[day_index - 1]
 
@@ -315,9 +335,8 @@ def run_backtest(name, feature_data, price_data,
             if attention_weights:
                 attention_records.append({"date": date, **attention_weights})
 
-            # Re-anchor stop-loss reference prices at every rebalance. Each
-            # held position receives a fresh entry price (the rebalance
-            # execution price), so the stop buffer resets per period.
+            # Anchor each holding's stop-loss reference to its rebalance
+            # execution price; the stop buffer resets per period.
             if stop_loss_pct:
                 entry_prices = {}
                 for ticker in current_holdings:
@@ -396,12 +415,12 @@ def run_equal_weight(price_data, start=BACKTEST_START, end=BACKTEST_END,
 
     portfolio_returns = daily_returns.mean(axis=1)
     nav_series = initial_nav * (1 + portfolio_returns).cumprod()
-    result = BacktestResult(name="Equal-Weight")
-    result.nav_series = pd.Series(nav_series, name="Equal-Weight")
+    result = BacktestResult(name="Equal-Weight(1/N)")
+    result.nav_series = pd.Series(nav_series, name="Equal-Weight(1/N)")
     result.returns_series = portfolio_returns
     result.compute_metrics()
     m = result.metrics
-    print(f"[{'Equal-Weight':20s}] Sharpe={m.get('Sharpe Ratio', 0):+.3f} | "
+    print(f"[{'Equal-Weight(1/N)':20s}] Sharpe={m.get('Sharpe Ratio', 0):+.3f} | "
           f"Return={m.get('Total Return', 0) * 100:+.1f}% | "
           f"MaxDD={m.get('Max Drawdown', 0) * 100:.1f}%")
     return result

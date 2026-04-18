@@ -1,7 +1,4 @@
-"""
-Adaptive Fusion Network: architecture, inference, and training.
-Mirrors notebook cells 8 and 11.
-"""
+"""Adaptive Fusion Network: architecture, inference, and training."""
 
 import random
 
@@ -36,12 +33,21 @@ from .config import (
     WEIGHT_DECAY,
 )
 
-random.seed(RANDOM_SEED)
-np.random.seed(RANDOM_SEED)
-torch.manual_seed(RANDOM_SEED)
-torch.cuda.manual_seed_all(RANDOM_SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+
+
+def seed_rng():
+    # Seed once per backtest/training run so each Streamlit rerun starts
+    # from the same RNG state; RNG evolves naturally across walk-forward
+    # retrains within a single run.
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+
+
+seed_rng()
 
 
 class AdaptiveFusionNetwork(nn.Module):
@@ -130,9 +136,7 @@ def build_train_tensors(feature_data, train_end=None, min_rows=20, verbose=True)
     # uses prices from after the cutoff (prevents look-ahead bias).
     safe_cutoff = cutoff - pd.tseries.offsets.BDay(FWD_HORIZON)
 
-    # Rolling window: use ROLLING_WINDOW trading days (~3 months) of recent
-    # data for walk-forward retrains to keep the model adapted to current
-    # regime while avoiding stale patterns.
+    # Walk-forward retrains use a trailing ROLLING_WINDOW of trading days.
     if train_end is not None:
         rolling_start = safe_cutoff - pd.tseries.offsets.BDay(ROLLING_WINDOW)
     else:
@@ -211,7 +215,6 @@ def pearson_ic_loss(predictions, targets):
     )
 
 
-# Keep old name as alias for backward compatibility
 rank_ic_loss = pearson_ic_loss
 
 
@@ -221,8 +224,11 @@ def attention_entropy(weights):
 
 def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
                 warm_start_state=None, progress_callback=None):
-    """
-    Train the fusion network using cross-sectional rank-IC loss.
+    """Train the fusion network using cross-sectional rank-IC loss.
+
+    Targets are the volatility-adjusted, winsorised ``fwd_return_{FWD_HORIZON}d``
+    columns. Stop-loss is applied downstream in :func:`backend.backtest.run_backtest`
+    and is not visible to the loss.
 
     Parameters
     ----------
@@ -234,7 +240,6 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
     )
 
     if not train_groups:
-        # Insufficient data -- return existing model unchanged
         if warm_start_state is not None:
             model = AdaptiveFusionNetwork().to(DEVICE)
             model.load_state_dict(warm_start_state)
@@ -258,7 +263,8 @@ def train_model(feature_data, train_end=None, verbose=True, k_dates=BATCH_SIZE,
     EARLY_STOP = 15 if is_finetune else 40
     train_ic_history, val_ic_history = [], []
 
-    # For warm-start: evaluate initial model on val first; only accept improvements.
+    # Warm-start: seed best_state with the pre-warm val IC so retrains
+    # only accept strict improvements.
     if is_finetune and val_groups:
         model.eval()
         baseline_ics = []
@@ -372,6 +378,7 @@ def load_or_train(feature_data, force_retrain=False, progress_callback=None):
         )
         model.to(DEVICE).eval()
         return model, [], []
+    seed_rng()
     model, train_hist, val_hist = train_model(
         feature_data, progress_callback=progress_callback
     )

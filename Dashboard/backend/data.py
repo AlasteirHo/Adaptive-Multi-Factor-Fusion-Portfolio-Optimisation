@@ -1,7 +1,4 @@
-"""
-Data loading: price data (yfinance), sentiment CSVs, and master dataset assembly.
-Mirrors notebook cell 4.
-"""
+"""Data loading: price data (yfinance), sentiment CSVs, and master dataset assembly."""
 
 import logging
 import warnings

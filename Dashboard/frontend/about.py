@@ -67,6 +67,22 @@ st.subheader("Strategy Performance Snapshot")
 
 if METRICS_PATH.exists():
     metrics_df = pd.read_csv(METRICS_PATH)
+
+    # Canonical Dashboard strategy names. Legacy parenthesised variants
+    # (e.g. "Adaptive (Fixed)", "Adaptive (Fixed+Stop)") are filtered out.
+    _dashboard_strategies = {
+        "Price-Only (no sentiment)",
+        "Static-Fusion (equal weight)",
+        "Adaptive Fixed",
+        "Adaptive Walk-Forward",
+        "Adaptive Fixed + StopLoss",
+        "Price-Only (no sentiment) + StopLoss",
+        "Static-Fusion (equal weight) + StopLoss",
+        "SPY Buy-and-Hold",
+        "Equal-Weight(1/N)",
+    }
+    metrics_df = metrics_df[metrics_df["Strategy"].isin(_dashboard_strategies)]
+
     fmt = {
         "Sharpe Ratio":      "{:.4f}",
         "Annualised Return": "{:.2%}",
@@ -103,5 +119,5 @@ with c2:
         "- Select strategy (Price-Only, Static-Fusion, Adaptive Fixed, Adaptive WF)\n"
         "- Train the Adaptive Fusion neural network live\n"
         "- Run backtest and view NAV, drawdown, weights, attention, and trade log\n"
-        "- Compare all strategies side-by-side against SPY and Equal-Weight benchmarks"
+        "- Compare all strategies side-by-side against SPY and Equal-Weight(1/N) benchmarks"
     )

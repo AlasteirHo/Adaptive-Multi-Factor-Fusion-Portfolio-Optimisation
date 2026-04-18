@@ -94,7 +94,7 @@ class TestShrinkageCov:
 
     def test_shrinkage_reduces_condition_number(self, sample_returns):
         raw_cov = sample_returns.cov().values
-        shrunk = shrinkage_cov(sample_returns, lam=0.1)
+        shrunk = shrinkage_cov(sample_returns)
         cond_raw = np.linalg.cond(raw_cov)
         cond_shrunk = np.linalg.cond(shrunk)
         assert cond_shrunk <= cond_raw

@@ -1,9 +1,7 @@
-"""
-Portfolio optimisation: Black-Litterman posterior and Sharpe MVO.
-Mirrors notebook cell 14.
-"""
+"""Portfolio optimisation: Black-Litterman posterior and Sharpe MVO."""
 
 import numpy as np
+from sklearn.covariance import LedoitWolf
 
 from scipy.optimize import minimize
 
@@ -51,14 +49,9 @@ def optimise_weights(expected_returns, covariance_matrix, min_w=MIN_WEIGHT, max_
     return final_weights
 
 
-def shrinkage_cov(returns, lam=0.1):
-    sample_cov = returns.cov().values
-    trace_mean = np.trace(sample_cov) / sample_cov.shape[0]
-    result = (1 - lam) * sample_cov + lam * trace_mean * np.eye(sample_cov.shape[0])
-    eigenvalues = np.linalg.eigvalsh(result)
-    assert np.all(eigenvalues >= -1e-10), \
-        f"Covariance matrix not PSD: min eigenvalue = {eigenvalues.min():.6e}"
-    return result
+def shrinkage_cov(returns):
+    lw = LedoitWolf().fit(returns.values)
+    return lw.covariance_
 
 
 def black_litterman_mu(returns, tickers, composite_scores, Sigma=None):

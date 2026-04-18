@@ -1,7 +1,4 @@
-"""
-Constants and hyperparameters for the Adaptive Fusion pipeline.
-Mirrors the notebook (Adaptive_Fusion_POC.ipynb) cell 2.
-"""
+"""Constants and hyperparameters for the Adaptive Fusion pipeline."""
 
 import os
 import sys
@@ -23,12 +20,15 @@ PYTHON_EXE = str(_conda_env_python) if _conda_env_python and _conda_env_python.e
 NEWS_SENTIMENT_DIR   = FYP_DIR / "Processed_Data" / "news_sentiment_daily"
 SOCIAL_SENTIMENT_DIR = FYP_DIR / "Processed_Data" / "tweets_sentiment_daily"
 OPTIMIZER_DIR        = FYP_DIR / "portfolio_optimizer"
+# Dashboard artefact location. The Portfolio Simulation page upserts rows
+# into metrics_summary.csv after each run; strategies not re-run keep their
+# existing values.
 OUTPUT_DIR           = OPTIMIZER_DIR / "outputs"
-MODEL_PATH           = OPTIMIZER_DIR / "fusion_network.pt"
+MODEL_PATH           = PRODUCT_DIR / "fusion_network.pt"
 SCRAPERS_DIR         = FYP_DIR / "scrapers"
 RAW_NEWS_DIR         = FYP_DIR / "Raw_Data" / "gdelt_news_data"
 RAW_TWEETS_DIR       = FYP_DIR / "Raw_Data" / "Tweets"
-RUNNERS_DIR          = PRODUCT_DIR / "runners"
+RUNNERS_DIR          = PRODUCT_DIR / "services"
 TRADE_LOG_PATH       = OUTPUT_DIR / "adaptive_fusion_trade_log.csv"
 METRICS_PATH         = OUTPUT_DIR / "metrics_summary.csv"
 
@@ -60,12 +60,13 @@ SECTOR_MAP = {
 SECTORS = sorted(set(SECTOR_MAP.values()))
 
 # ---- Date ranges ----
-BACKTEST_START = "2025-01-01"
+# Backtest window is pinned to match the reported experiment.
+BACKTEST_START = "2024-12-01"
+BACKTEST_END   = "2025-12-01"
 
-def _detect_data_bounds(*dirs: Path):
-    """Scan sentiment CSVs and return (earliest, latest) available dates."""
+def _detect_data_start(*dirs: Path):
+    """Scan sentiment CSVs and return the earliest available date."""
     earliest = pd.Timestamp.today()
-    latest   = pd.Timestamp(BACKTEST_START)
     for d in dirs:
         if not d.exists():
             continue
@@ -74,16 +75,15 @@ def _detect_data_bounds(*dirs: Path):
                 dates = pd.read_csv(csv, usecols=["date"], parse_dates=["date"])["date"]
                 if not dates.empty:
                     earliest = min(earliest, dates.min())
-                    latest   = max(latest,   dates.max())
             except Exception:
                 continue
-    return str(earliest.normalize().date()), str(latest.normalize().date())
+    return str(earliest.normalize().date())
 
-DATA_START, BACKTEST_END = _detect_data_bounds(
+DATA_START = _detect_data_start(
     FYP_DIR / "Processed_Data" / "news_sentiment_daily",
     FYP_DIR / "Processed_Data" / "tweets_sentiment_daily",
 )
-TRAIN_START    = DATA_START   # use all available history (20-stock universe needs maximum data)
+TRAIN_START    = DATA_START
 TRAIN_END      = BACKTEST_START
 
 # ---- Portfolio ----
@@ -98,11 +98,10 @@ SEC_FEE_RATE      = 0.0000278
 FINRA_TAF_PER_SH  = 0.000166
 
 # ---- Stop-loss ----
-# Default per-position stop-loss threshold. Liquidate a held position if its
-# intraday Low falls below entry_price * (1 - STOP_LOSS_PCT). The 1% default is
-# tighter than a typical 10% because the 10-day rebalance interval and low
-# daily volatility of the large-cap universe would otherwise rarely trigger.
-STOP_LOSS_PCT     = 0.01
+# Liquidate a held position if its intraday Low falls below
+# entry_price * (1 - STOP_LOSS_PCT). Calibrated from the cross-ticker mean
+# intraday drawdown observed in the backtest universe.
+STOP_LOSS_PCT     = 0.024
 
 # ---- Technical indicator parameters ----
 RSI_PERIOD        = 14
@@ -127,8 +126,8 @@ ENTROPY_LAMBDA = 0.0
 FWD_HORIZON    = 10
 RANDOM_SEED    = 42
 STATIC_WEIGHTS = [1 / N_FACTORS] * N_FACTORS
-RETRAIN_EVERY  = REBALANCE_DAYS  # retrain at every rebalance for walk-forward
-ROLLING_WINDOW = 63           # ~3 months of trading days for rolling training window
+RETRAIN_EVERY  = REBALANCE_DAYS
+ROLLING_WINDOW = 63
 
 # ---- Black-Litterman ----
 BL_TAU         = 0.5

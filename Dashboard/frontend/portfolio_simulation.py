@@ -21,6 +21,10 @@ from backend.config import (
     DEVICE,
     DEVICE_NAME,
     FACTOR_COLS,
+    INITIAL_NAV,
+    METRICS_PATH,
+    MODEL_PATH,
+    OUTPUT_DIR,
     REBALANCE_DAYS,
     RETRAIN_EVERY,
     STOP_LOSS_PCT,
@@ -29,7 +33,7 @@ from backend.config import (
 )
 from backend.data import load_all_data
 from backend.features import build_features
-from backend.model import load_or_train
+from backend.model import load_or_train, train_model
 from backend.backtest import (
     run_backtest,
     run_equal_weight,
@@ -37,6 +41,18 @@ from backend.backtest import (
 )
 
 st.title("Portfolio Simulation")
+
+# Rehydrate sidebar widget state so selections survive page navigation.
+# Streamlit drops widget values when a page unmounts unless we re-assign
+# each key to itself on every run.
+for _k in (
+    "sb_selected_strategies", "sb_run_benchmarks",
+    "sb_use_stop_loss", "sb_stop_loss_pct", "sb_stop_loss_strategies",
+    "sb_backtest_start", "sb_backtest_end",
+    "sb_investment_capital", "sb_model_mode",
+):
+    if _k in st.session_state:
+        st.session_state[_k] = st.session_state[_k]
 
 # ---------------------------------------------------------------------------
 # Modern button CSS
@@ -194,9 +210,14 @@ selected_strategies = st.sidebar.multiselect(
     "Strategies to run",
     options=list(strategy_options.keys()),
     default=["Adaptive Fixed"],
+    key="sb_selected_strategies",
 )
 
-run_benchmarks = st.sidebar.checkbox("Include SPY & Equal-Weight benchmarks", value=True)
+run_benchmarks = st.sidebar.checkbox(
+    "Include SPY & Equal-Weight(1/N) benchmarks",
+    value=True,
+    key="sb_run_benchmarks",
+)
 
 # ---- Stop-loss controls --------------------------------------------------
 st.sidebar.divider()
@@ -204,6 +225,7 @@ st.sidebar.subheader("Stop-Loss")
 use_stop_loss = st.sidebar.toggle(
     "Enable stop-loss",
     value=False,
+    key="sb_use_stop_loss",
     help=(
         "When enabled, any held position whose intraday Low falls below "
         "entry_price * (1 - threshold) is liquidated at the stop price, "
@@ -217,16 +239,44 @@ stop_loss_pct_input = st.sidebar.number_input(
     value=float(STOP_LOSS_PCT * 100),
     step=0.1,
     disabled=not use_stop_loss,
+    key="sb_stop_loss_pct",
     help="Per-position drawdown at which a holding is liquidated.",
 )
+_stop_loss_options = [
+    s for s in selected_strategies
+    if strategy_options.get(s, {}).get("retrain", 0) == 0
+]
+_excluded_for_stop = [s for s in selected_strategies if s not in _stop_loss_options]
 stop_loss_strategies = st.sidebar.multiselect(
     "Apply stop-loss to",
-    options=selected_strategies,
-    default=selected_strategies if use_stop_loss else [],
+    options=_stop_loss_options,
+    default=[],
     disabled=not use_stop_loss,
-    help="Choose which strategies use the stop-loss rule.",
+    key="sb_stop_loss_strategies",
+    help=(
+        "Choose which strategies use the stop-loss rule. Stopped variants "
+        "appear alongside their un-stopped counterparts labelled "
+        "'<Strategy> + StopLoss'. Walk-forward strategies are omitted "
+        "because stop-loss is a post-training rule and cannot be applied "
+        "while the model is retrained mid-backtest."
+    ),
 )
+if use_stop_loss and _excluded_for_stop:
+    st.sidebar.caption(
+        f"Stop-loss not available for {', '.join(_excluded_for_stop)} "
+        f"(walk-forward retraining cannot be combined with stop-loss)."
+    )
 stop_loss_pct_value = (stop_loss_pct_input / 100.0) if use_stop_loss else None
+
+
+def _labelled(strat_name: str, with_stop: bool) -> str:
+    """Append ' + StopLoss' when the strategy is running with stop-loss.
+
+    Used consistently by run_backtest name arguments, the completed results
+    dict keys, chart legends, and metric tables so that every surface shows
+    the same label.
+    """
+    return f"{strat_name} + StopLoss" if with_stop else strat_name
 
 # ---- Date range controls -------------------------------------------------
 st.sidebar.divider()
@@ -236,11 +286,13 @@ _default_end = pd.Timestamp(BACKTEST_END).date()
 backtest_start_date = st.sidebar.date_input(
     "Start date",
     value=_default_start,
+    key="sb_backtest_start",
     help="First trading day of the backtest window. Default is the project's backtest start.",
 )
 backtest_end_date = st.sidebar.date_input(
     "End date",
     value=_default_end,
+    key="sb_backtest_end",
     help="Last trading day of the backtest window. Default is the latest available data.",
 )
 if backtest_end_date <= backtest_start_date:
@@ -250,6 +302,19 @@ backtest_start_str = backtest_start_date.isoformat()
 backtest_end_str = backtest_end_date.isoformat()
 
 st.sidebar.divider()
+st.sidebar.subheader("Capital")
+investment_capital = st.sidebar.number_input(
+    "Investment capital",
+    min_value=100.0,
+    max_value=10_000_000.0,
+    value=float(INITIAL_NAV),
+    step=1_000.0,
+    format="%.2f",
+    key="sb_investment_capital",
+    help="Starting portfolio value (USD) applied to every strategy and benchmark.",
+)
+
+st.sidebar.divider()
 if use_stop_loss and stop_loss_strategies:
     _stop_loss_label = f"{stop_loss_pct_input:.1f}% ({len(stop_loss_strategies)} strategies)"
 else:
@@ -257,6 +322,7 @@ else:
 st.sidebar.markdown(
     f"**Config snapshot**\n"
     f"- Backtest: {backtest_start_str} to {backtest_end_str}\n"
+    f"- Capital: ${investment_capital:,.2f}\n"
     f"- Top N stocks: {TOP_N_STOCKS}\n"
     f"- Rebalance: every {REBALANCE_DAYS} days\n"
     f"- Stop-loss: {_stop_loss_label}\n"
@@ -276,7 +342,27 @@ if backtest_end_date <= backtest_start_date:
     st.info("Fix the backtest date range in the sidebar before running.")
     st.stop()
 
-run_btn = st.button("Run Simulation", type="primary", width="stretch")
+_model_exists = MODEL_PATH.exists()
+model_mode = st.radio(
+    "Adaptive model weights",
+    options=["Retrain", "Load saved"],
+    index=1 if _model_exists else 0,
+    horizontal=True,
+    key="sb_model_mode",
+    help=(
+        "Retrain trains a fresh Adaptive Fusion Network from scratch. "
+        "Load saved uses the saved fusion_network.pt file."
+    ),
+)
+if not _model_exists:
+    st.caption("No saved fusion_network.pt found; Retrain will create one.")
+force_retrain_flag = (model_mode == "Retrain") or (not _model_exists)
+
+_run_label = (
+    "Retrain & Run Simulation" if force_retrain_flag
+    else "Load Model & Run Simulation"
+)
+run_btn = st.button(_run_label, type="primary", width="stretch")
 
 if run_btn:
     # Reset playback state for fresh run
@@ -295,65 +381,110 @@ if run_btn:
                 state="complete",
             )
 
-        # ---- Step 2: Train model if needed ----
-        needs_model = any(
-            strategy_options[s].get("use_adaptive", False)
-            for s in selected_strategies
-        )
+        # ---- Step 2: Train model(s) if needed ----
+        _fixed_strategies = [
+            s for s in selected_strategies
+            if strategy_options[s].get("use_adaptive", False)
+            and strategy_options[s].get("retrain", 0) == 0
+        ]
+        _wf_strategies = [
+            s for s in selected_strategies
+            if strategy_options[s].get("use_adaptive", False)
+            and strategy_options[s].get("retrain", 0) > 0
+        ]
 
+        def _train_progress(epoch, train_ic, val_ic, total, bar, log):
+            pct = min(epoch / total, 1.0)
+            bar.progress(pct, text=f"Epoch {epoch}/{total}")
+            log.text(
+                f"Train IC: {train_ic:.4f} | Val IC: {val_ic:.4f} | "
+                f"Gap: {train_ic - val_ic:+.4f}"
+            )
+
+        # Adaptive Fixed (and any other retrain=0 adaptive strategy) uses the
+        # user-chosen load/retrain path against fusion_network.pt.
         model = None
-        if needs_model:
-            with st.status("Training Adaptive Fusion Network...", expanded=True) as status:
+        if _fixed_strategies:
+            _status_label = (
+                "Training Adaptive Fusion Network..."
+                if force_retrain_flag else "Loading saved Adaptive Fusion Network..."
+            )
+            with st.status(_status_label, expanded=True) as status:
                 train_bar = st.progress(0, text="Initialising...")
                 train_log = st.empty()
-
-                def _train_progress(epoch, train_ic, val_ic, total):
-                    pct = min(epoch / total, 1.0)
-                    train_bar.progress(pct, text=f"Epoch {epoch}/{total}")
-                    train_log.text(
-                        f"Train IC: {train_ic:.4f} | Val IC: {val_ic:.4f} | "
-                        f"Gap: {train_ic - val_ic:+.4f}"
-                    )
-
                 with capture_stdout() as buf:
                     model, train_hist, val_hist = load_or_train(
                         feature_data,
-                        force_retrain=True,
-                        progress_callback=_train_progress,
+                        force_retrain=force_retrain_flag,
+                        progress_callback=lambda e, ti, vi, t:
+                            _train_progress(e, ti, vi, t, train_bar, train_log),
                     )
-                train_bar.progress(1.0, text="Training complete")
+                train_bar.progress(1.0, text="Done")
                 st.code(buf.getvalue(), language="text")
-                status.update(label="Training complete", state="complete")
+                status.update(
+                    label="Training complete" if force_retrain_flag else "Model loaded",
+                    state="complete",
+                )
 
-                if train_hist:
-                    fig_train = go.Figure()
-                    fig_train.add_trace(go.Scatter(
-                        y=[-v for v in train_hist], name="Train IC", mode="lines",
-                    ))
-                    fig_train.add_trace(go.Scatter(
-                        y=[-v for v in val_hist], name="Val IC", mode="lines",
-                    ))
-                    fig_train.update_layout(
-                        **PLOTLY_LAYOUT,
-                        title="Training Curves (IC per epoch)",
-                        xaxis_title="Epoch", yaxis_title="Information Coefficient",
-                        height=CHART_HEIGHT_SMALL, autosize=True,
-                        margin=dict(l=40, r=20, t=40, b=40),
+        # Walk-forward gets an independent freshly-trained instance so its
+        # warm-starts never mutate or depend on fusion_network.pt.
+        wf_model = None
+        if _wf_strategies:
+            with st.status(
+                "Training Walk-Forward seed model (independent instance)...",
+                expanded=True,
+            ) as status:
+                wf_bar = st.progress(0, text="Initialising...")
+                wf_log = st.empty()
+                with capture_stdout() as buf:
+                    wf_model, wf_train_hist, wf_val_hist = train_model(
+                        feature_data,
+                        progress_callback=lambda e, ti, vi, t:
+                            _train_progress(e, ti, vi, t, wf_bar, wf_log),
                     )
-                    st.plotly_chart(fig_train, width="stretch", key="train_curve")
+                wf_bar.progress(1.0, text="Done")
+                st.code(buf.getvalue(), language="text")
+                status.update(label="Walk-Forward seed trained", state="complete")
+
+        # Plot training curves from whichever instance was trained (Fixed
+        # takes precedence; otherwise fall back to the Walk-Forward seed).
+        _curve_train = train_hist if _fixed_strategies else (
+            wf_train_hist if _wf_strategies else None
+        )
+        _curve_val = val_hist if _fixed_strategies else (
+            wf_val_hist if _wf_strategies else None
+        )
+        if _curve_train:
+            fig_train = go.Figure()
+            fig_train.add_trace(go.Scatter(
+                y=[-v for v in _curve_train], name="Train IC", mode="lines",
+            ))
+            fig_train.add_trace(go.Scatter(
+                y=[-v for v in _curve_val], name="Val IC", mode="lines",
+            ))
+            fig_train.update_layout(
+                **PLOTLY_LAYOUT,
+                title="Training Curves (IC per epoch)",
+                xaxis_title="Epoch", yaxis_title="Information Coefficient",
+                height=CHART_HEIGHT_SMALL, autosize=True,
+                margin=dict(l=40, r=20, t=40, b=40),
+            )
+            st.plotly_chart(fig_train, width="stretch", key="train_curve")
 
         # ---- Step 3: Run strategies ----
-        with st.status("Running backtests...", expanded=True) as status:
+        with st.status("Running simulation...", expanded=True) as status:
             bt_bar = st.progress(0, text="Starting...")
             completed = {}
             n_total = len(selected_strategies)
 
             for i, strat_name in enumerate(selected_strategies):
                 opts = strategy_options[strat_name]
+                with_stop = bool(use_stop_loss and strat_name in stop_loss_strategies)
+                display_name = _labelled(strat_name, with_stop)
 
                 def _bt_progress(day_idx, total, dt, nav,
                                  nav_history, weight_records, trade_records,
-                                 _i=i, _name=strat_name):
+                                 _i=i, _name=display_name):
                     inner_pct = day_idx / max(total, 1)
                     overall = (_i + inner_pct) / n_total
                     bt_bar.progress(
@@ -361,22 +492,30 @@ if run_btn:
                         text=f"{_name}: day {day_idx}/{total}  |  NAV: ${nav:,.2f}",
                     )
 
+                # Walk-forward uses its own independent instance so it never
+                # shares weights with the loaded fusion_network.pt.
+                if opts.get("use_adaptive"):
+                    _strat_model = wf_model if opts.get("retrain", 0) > 0 else model
+                else:
+                    _strat_model = None
+
                 with capture_stdout() as buf:
                     result = run_backtest(
-                        name=strat_name,
+                        name=display_name,
                         feature_data=feature_data,
                         price_data=price_data,
-                        model=model if opts.get("use_adaptive") else None,
+                        model=_strat_model,
                         start=backtest_start_str,
                         end=backtest_end_str,
+                        initial_nav=investment_capital,
                         use_sentiment=opts["use_sentiment"],
                         use_adaptive=opts.get("use_adaptive", False),
                         retrain_every=opts.get("retrain", 0),
-                        stop_loss_pct=stop_loss_pct_value if strat_name in stop_loss_strategies else None,
+                        stop_loss_pct=stop_loss_pct_value if with_stop else None,
                         progress_callback=_bt_progress,
                     )
                 st.code(buf.getvalue(), language="text")
-                completed[strat_name] = result
+                completed[display_name] = result
 
             if run_benchmarks:
                 bt_bar.progress(0.95, text="Running benchmarks...")
@@ -385,21 +524,49 @@ if run_btn:
                         spy_returns,
                         start=backtest_start_str,
                         end=backtest_end_str,
+                        initial_nav=investment_capital,
                     )
-                    completed["Equal-Weight"] = run_equal_weight(
+                    completed["Equal-Weight(1/N)"] = run_equal_weight(
                         price_data,
                         start=backtest_start_str,
                         end=backtest_end_str,
+                        initial_nav=investment_capital,
                     )
                 st.code(buf.getvalue(), language="text")
 
-            bt_bar.progress(1.0, text="All backtests complete")
-            status.update(label="All backtests complete", state="complete")
+            bt_bar.progress(1.0, text="Simulation complete")
+            status.update(label="Simulation complete", state="complete")
 
         st.session_state["sim_results"] = completed
         st.session_state["sim_metrics"] = {
             name: res.metrics for name, res in completed.items()
         }
+
+        # Upsert the freshly-computed rows into the Dashboard's existing
+        # metrics_summary.csv. Strategies the user re-ran are overwritten
+        # with the new numbers; all other rows in the file are preserved.
+        # The About page reads this file as-is on its next visit.
+        try:
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            new_rows = [
+                {"Strategy": name, **res.metrics}
+                for name, res in completed.items()
+                if res.metrics
+            ]
+            if new_rows:
+                new_df = pd.DataFrame(new_rows)
+                if METRICS_PATH.exists():
+                    existing = pd.read_csv(METRICS_PATH)
+                    # Drop any existing rows that this run replaces, then
+                    # append the new rows. Order preserved: kept rows first,
+                    # new rows at the bottom.
+                    existing = existing[~existing["Strategy"].isin(new_df["Strategy"])]
+                    combined = pd.concat([existing, new_df], ignore_index=True)
+                else:
+                    combined = new_df
+                combined.to_csv(METRICS_PATH, index=False)
+        except Exception as _save_exc:
+            st.warning(f"Could not save metrics summary: {_save_exc}")
 
     except Exception as e:
         st.error(f"Simulation failed: {e}")
@@ -489,13 +656,13 @@ st.subheader("NAV Comparison")
 
 play_col, stop_col, info_col = st.columns([1, 1, 6])
 with play_col:
-    if st.button("\u25B6  Play", key="play_btn"):
+    if st.button("Play", key="play_btn"):
         st.session_state["playing"] = True
         st.session_state["play_idx"] = 0
         st.session_state.pop("inspect_date", None)
         st.rerun()
 with stop_col:
-    if st.button("\u25A0  Stop", key="stop_btn"):
+    if st.button("Stop", key="stop_btn"):
         st.session_state["playing"] = False
         # play_idx is kept so we freeze at the current position
         st.rerun()
