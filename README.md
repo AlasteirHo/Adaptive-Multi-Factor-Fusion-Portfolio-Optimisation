@@ -178,8 +178,6 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 |   |-- Adaptive_Fusion_POC.ipynb     # Main research notebook (base backtest)
 |   |-- Adaptive_Fusion_POC_StopLoss.ipynb  # Stop-loss ablation notebook
 |   |-- fusion_network.pt             # Pre-trained model weights (Fixed)
-|   |-- fusion_network2.pt            # Walk-forward model weights
-|   +-- outputs/                      # Figures and CSV results
 |-- Dashboard/
 |   |-- backend/                      # Python package (11 modules)
 |   |   |-- config.py                 #   Centralised hyperparameters
@@ -206,9 +204,7 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 |   +-- main.py                       # Streamlit application entry point
 |-- Diagrams/                         # Architecture diagrams and result figures
 |-- Raw_Data/                         # Unprocessed scraper outputs
-|-- Processed_Data/                   # Daily sentiment CSV files
-|-- Report/                           # LaTeX dissertation and figures
-|-- literature/                       # Source PDFs for referenced papers
+|-- Processed_Data/                   # Daily sentiment CSV files              
 |-- requirements.txt
 +-- README.md
 ```
@@ -252,6 +248,14 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
    TWITTER_USERNAME=your_username
    TWITTER_PASSWORD=your_password
    ```
+
+6. **Download and unpack the dataset:**
+
+   Download the bundled dataset archive from Google Drive:
+
+   [https://drive.google.com/file/d/1fZXP7-HeDjBaVtzZQEIwyxAS4TVGoy52/view?usp=sharing](https://drive.google.com/file/d/1fZXP7-HeDjBaVtzZQEIwyxAS4TVGoy52/view?usp=sharing)
+
+   Unpack the archive into the project root so that the `Raw_Data/` and `Processed_Data/` directories sit alongside `Scrapers/`, `Portfolio_Optimizer/`, and `Dashboard/`. Skipping this step means you will need to run the scrapers and preprocessing notebooks from scratch (Steps 1 through 3 below) to regenerate the data.
 
 ## Usage
 
