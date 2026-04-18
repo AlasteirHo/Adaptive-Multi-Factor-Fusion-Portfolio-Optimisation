@@ -5,7 +5,6 @@ scikit-learn
 scipy
 
 # Deep Learning & NLP
-torch
 transformers
 accelerate
 datasets
@@ -36,9 +35,6 @@ gdeltdoc
 
 # Language Detection
 lingua-language-detector
-
-# PDF Extraction
-PyMuPDF
 
 # Testing
 pytest
