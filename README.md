@@ -90,7 +90,7 @@ Five strategies of increasing complexity are compared to isolate the contributio
   <img src="Diagrams/AdaptiveFusionDiagram/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
 </p>
 
-The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.0%), 5-day reversal (20.8%), and abnormal volume (15.5%) account for 68.3% of the attention budget. News sentiment (8.7%) and social sentiment (4.6%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
+The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.1%), 5-day reversal (20.9%), and abnormal volume (15.4%) account for 68.4% of the attention budget. News sentiment (8.8%) and social sentiment (4.5%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
 
 ### Volatility Regime Adaptation
 
