@@ -87,7 +87,7 @@ Five strategies of increasing complexity are compared to isolate the contributio
 ### Factor Attribution
 
 <p align="center">
-  <img src="Diagrams/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
+  <img src="Diagrams/AdaptiveFusionDiagram/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
 </p>
 
 The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.0%), 5-day reversal (20.8%), and abnormal volume (15.5%) account for 68.3% of the attention budget. News sentiment (8.7%) and social sentiment (4.6%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
@@ -95,7 +95,7 @@ The attention network allocates the majority of weight to risk-based technical f
 ### Volatility Regime Adaptation
 
 <p align="center">
-  <img src="Diagrams/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
+  <img src="Diagrams/AdaptiveFusionDiagram/7_attention_by_vol_regime.png" alt="Attention weights by volatility regime" width="800"/>
 </p>
 
 The model adapts its factor weighting based on the prevailing volatility regime. In high-volatility periods, the network increases weight on idiosyncratic volatility and RSI (mean-reversion signals), while in low-volatility periods it allocates relatively more to sentiment and momentum signals. This regime-conditional behaviour is learned end-to-end without explicit rules.
@@ -103,7 +103,7 @@ The model adapts its factor weighting based on the prevailing volatility regime.
 ### Bootstrap Confidence Intervals
 
 <p align="center">
-  <img src="Diagrams/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
+  <img src="Diagrams/AdaptiveFusionDiagram/10_bootstrap_ci.png" alt="Bootstrap 95% confidence intervals for Sharpe, CAGR, and max drawdown" width="800"/>
 </p>
 
 Statistical robustness is assessed via 2,000 stationary bootstrap resamples with geometric block length of 10 days. While the Adaptive strategies show higher point estimates across all metrics, the 95% confidence intervals overlap across strategies, reflecting the inherent uncertainty of a single 252-day evaluation window.
