@@ -27,13 +27,21 @@ Both Adaptive variants delivered comparable risk (volatility and maximum drawdow
 ### Portfolio NAV Performance
 
 <p align="center">
-  <img src="Diagrams/AdaptiveFusionDiagramSL/1_nav_comparison.png" alt="Portfolio NAV comparison across all six strategies" width="800"/>
+  <img src="Diagrams/AdaptiveFusionDiagram/1_nav_comparison.png" alt="Portfolio NAV comparison across base strategies (no stop-loss)" width="800"/>
+</p>
+
+<p align="center">
+  <img src="Diagrams/AdaptiveFusionDiagramSL/1_nav_comparison.png" alt="Portfolio NAV comparison including the Adaptive (Fixed+Stop) ablation variant" width="800"/>
 </p>
 
 ### Drawdown Comparison
 
 <p align="center">
-  <img src="Diagrams/AdaptiveFusionDiagramSL/2_drawdown_comparison.png" alt="Drawdown profiles for all strategies" width="800"/>
+  <img src="Diagrams/AdaptiveFusionDiagram/2_drawdown_comparison.png" alt="Drawdown profiles for base strategies (no stop-loss)" width="800"/>
+</p>
+
+<p align="center">
+  <img src="Diagrams/AdaptiveFusionDiagramSL/2_drawdown_comparison.png" alt="Drawdown profiles including the Adaptive (Fixed+Stop) ablation variant" width="800"/>
 </p>
 
 ## Overview
