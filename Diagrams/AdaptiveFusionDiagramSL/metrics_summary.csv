@@ -1,7 +1,0 @@
-Strategy,Sharpe Ratio,Annualised Return,Annualised Vol,Max Drawdown,Calmar Ratio,Total Return
-Adaptive (Fixed),1.3198,0.2783,0.2108,-0.1428,1.9491,0.2733
-Adaptive (Fixed+Stop),2.5405,0.2992,0.1178,-0.1006,2.9727,0.2938
-Static-Fusion,0.3911,0.085,0.2173,-0.1952,0.4353,0.0836
-Price-Only,0.9282,0.1988,0.2142,-0.1952,1.0185,0.1953
-Equal-Weight,1.1181,0.2176,0.1946,-0.1844,1.18,0.2147
-SPY Buy-and-Hold,0.7481,0.1484,0.1984,-0.1876,0.7913,0.1454
