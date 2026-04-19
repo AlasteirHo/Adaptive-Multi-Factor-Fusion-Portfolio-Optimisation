@@ -1,0 +1,5 @@
+Strategy,Sharpe,Annualised Return,Annualised Vol,Max Drawdown,Calmar Ratio,Total Return
+Adaptive (Fixed) [OOS],-0.0609,-0.01,0.1635,-0.1446,-0.0689,-0.0037
+Adaptive (Fixed+Stop) [OOS],-0.2703,-0.0314,0.1163,-0.1082,-0.2906,-0.0118
+Equal-Weight [OOS],0.6155,0.0803,0.1305,-0.1044,0.7696,0.0296
+SPY Buy-and-Hold [OOS],1.0343,0.1393,0.1347,-0.0888,1.5679,0.0479
