@@ -12,15 +12,15 @@ A context-conditioned attention network for adaptive multi-source sentiment fusi
 
 | Strategy | Sharpe | Ann. Return | Ann. Vol | Max Drawdown | Calmar | Total Return |
 |----------|--------|-------------|----------|-------------|--------|-------------|
-| **Adaptive (Fixed+Stop)** | **2.54** | **29.92%** | **11.78%** | **-10.06%** | **2.97** | **29.38%** |
-| Adaptive (WF) | 1.32 | 27.83% | 21.08% | -14.28% | 1.95 | 27.33% |
-| Adaptive (Fixed) | 1.32 | 27.83% | 21.08% | -14.28% | 1.95 | 27.33% |
+| **Adaptive (Fixed+Stop)** | **2.51** | **27.76%** | **11.07%** | **-8.36%** | **3.32** | **27.26%** |
+| Adaptive (WF) | 1.39 | 29.24% | 20.96% | -13.54% | 2.16 | 28.71% |
+| Adaptive (Fixed) | 1.39 | 29.24% | 20.96% | -13.54% | 2.16 | 28.71% |
 | Equal-Weight (1/N) | 1.12 | 21.76% | 19.46% | -18.44% | 1.18 | 21.47% |
 | Price-Only | 0.93 | 19.88% | 21.42% | -19.52% | 1.02 | 19.53% |
 | SPY Buy-and-Hold | 0.75 | 14.84% | 19.84% | -18.76% | 0.79 | 14.54% |
-| Static-Fusion | 0.39 | 8.50% | 21.73% | -19.52% | 0.44 | 8.36% |
+| Static-Fusion | 0.28 | 6.14% | 21.82% | -21.56% | 0.28 | 6.04% |
 
-The top-performing strategy, Adaptive (Fixed+Stop), adds a 2.4% per-position stop-loss (based on the mean intraday drawdown of the universe) to the adaptive fusion model. This nearly doubled the Sharpe ratio (1.32 to 2.54) by almost halving annualised volatility (21.08% to 11.78%) and reducing maximum drawdown by around 30% (-14.28% to -10.06%), while increasing total return. 64 stop-outs were triggered during the backtest period.
+The top-performing strategy, Adaptive (Fixed+Stop), adds a 2.0% per-position stop-loss (calibrated from the cross-ticker mean intraday drawdown on the model training window, pre-backtest) to the adaptive fusion model. This lifted the Sharpe ratio by 81% (1.39 to 2.51) by almost halving annualised volatility (20.96% to 11.07%) and cutting maximum drawdown by 38% (-13.54% to -8.36%), at the cost of a small decrease in total return (28.71% to 27.26%). 73 stop-outs were triggered during the backtest period. A true post-backtest out-of-sample check (Jan-Apr 2026, ~95 trading days) showed both Adaptive variants under-performed SPY and Equal-Weight, indicating the backtest-period gains are regime-sensitive; see Chapter 6 §6.2.9 for detail.
 
 Both Adaptive variants delivered comparable risk (volatility and maximum drawdown within 1-2 percentage points of each other), with Walk-Forward offering modestly higher Sharpe and total return through continuous retraining every 10 trading days. This indicates that the pre-trained attention weights already generalise well, and that retraining provides incremental rather than transformative improvements.
 
@@ -53,7 +53,7 @@ The system performs the following pipeline:
 3. **Preprocessing** -- Cleans, deduplicates, and labels data using the custom model, then aggregates into daily sentiment scores per ticker
 4. **Adaptive Fusion & Portfolio Optimisation** -- A PyTorch attention network produces context-dependent factor weights over 8 signals, integrated into a Black-Litterman framework and optimised via Sharpe ratio maximisation
 5. **Walk-Forward Backtest** -- Evaluates strategies over ~252 trading days with realistic transaction costs (SEC/FINRA fees + 5 bps slippage)
-6. **Stop-Loss Ablation** -- Tests the impact of a 2.4% per-position stop-loss rule on the best-performing adaptive strategy
+6. **Stop-Loss Ablation** -- Tests the impact of a 2.0% per-position stop-loss rule on the best-performing adaptive strategy
 7. **Streamlit Web Application** -- Three-page interactive demo with data collection, model training, and portfolio simulation with animated playback
 
 ## Architecture
@@ -147,7 +147,7 @@ Statistical robustness is assessed via 2,000 stationary bootstrap resamples with
 
 Composite alpha scores are integrated into a **Black-Litterman** framework (tau=0.5, delta=2.5) and optimised via **Sharpe ratio maximisation** (SLSQP) with weight bounds [5%, 40%] and top-5 stock selection per rebalance (every 10 trading days).
 
-**Stop-loss extension:** A 2.4% per-position stop-loss (calibrated to the mean intraday drawdown across the 20-stock universe) monitors intraday lows against entry prices. When triggered, the position is liquidated at the stop price with one-way slippage and regulatory fees; proceeds are held as idle cash until the next scheduled rebalance.
+**Stop-loss extension:** A 2.0% per-position stop-loss (calibrated out-of-sample from the mean intraday drawdown across the 20-stock universe over the model training window) monitors intraday lows against entry prices. When triggered, the position is liquidated at the stop price with one-way slippage and regulatory fees; proceeds are held as idle cash until the next scheduled rebalance.
 
 ## Technology Stack
 
@@ -315,7 +315,7 @@ A RoBERTa-base model (125M parameters) fine-tuned for three-class financial sent
 - **Walk-forward retraining:** The WF variant retrains the attention network at every rebalance (every 10 trading days) using a 3-month (63 trading day) rolling window with warm-starting.
 - **No sentiment forward-fill:** Missing sentiment days default to neutral (0) rather than carrying stale values forward; the attention network learns to rely on technical factors when sentiment coverage is sparse.
 - **Realistic costs:** SEC fee (0.278 bps on sells), FINRA TAF ($0.000166/share, capped at $8.30), and 5 bps one-way slippage on all trades.
-- **Stop-loss rule:** 2.4% per-position stop based on intraday low vs. entry price, calibrated to the mean intraday drawdown of the 20-stock universe and informed by Han, Zhou & Zhu (2016) and Kaminski & Lo (2014).
+- **Stop-loss rule:** 2.0% per-position stop based on intraday low vs. entry price, calibrated from the mean intraday drawdown of the 20-stock universe over the model training window (pre-backtest) and informed by Han, Zhou & Zhu (2016) and Kaminski & Lo (2014).
 - **Statistical robustness:** 2,000 stationary bootstrap resamples with geometric block length of 10 days for confidence intervals.
 
 ## Limitations
