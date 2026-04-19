@@ -13,7 +13,7 @@ A context-conditioned attention network for adaptive multi-source sentiment fusi
 | Strategy | Sharpe | Ann. Return | Ann. Vol | Max Drawdown | Calmar | Total Return |
 |----------|--------|-------------|----------|-------------|--------|-------------|
 | **Adaptive (Fixed+Stop)** | **2.54** | **29.92%** | **11.78%** | **-10.06%** | **2.97** | **29.38%** |
-| Adaptive (WF) | 1.55 | 34.76% | 22.47% | -14.50% | 2.40 | 34.13% |
+| Adaptive (WF) | 1.32 | 27.83% | 21.08% | -14.28% | 1.95 | 27.33% |
 | Adaptive (Fixed) | 1.32 | 27.83% | 21.08% | -14.28% | 1.95 | 27.33% |
 | Equal-Weight (1/N) | 1.12 | 21.76% | 19.46% | -18.44% | 1.18 | 21.47% |
 | Price-Only | 0.93 | 19.88% | 21.42% | -19.52% | 1.02 | 19.53% |
@@ -147,7 +147,7 @@ Statistical robustness is assessed via 2,000 stationary bootstrap resamples with
 
 Composite alpha scores are integrated into a **Black-Litterman** framework (tau=0.5, delta=2.5) and optimised via **Sharpe ratio maximisation** (SLSQP) with weight bounds [5%, 40%] and top-5 stock selection per rebalance (every 10 trading days).
 
-**Stop-loss extension:** A 2.4% per-position stop-loss (calibrated to the mean intraday drawdown across the 20-stock universe) monitors intraday lows against entry prices. When triggered, the position is liquidated at the stop price with one-way slippage and regulatory fees; proceeds are held as cash (earning Fed Funds Effective minus 25 bps) until the next scheduled rebalance.
+**Stop-loss extension:** A 2.4% per-position stop-loss (calibrated to the mean intraday drawdown across the 20-stock universe) monitors intraday lows against entry prices. When triggered, the position is liquidated at the stop price with one-way slippage and regulatory fees; proceeds are held as idle cash until the next scheduled rebalance.
 
 ## Technology Stack
 
@@ -165,48 +165,49 @@ Composite alpha scores are integrated into a **Black-Litterman** framework (tau=
 
 ```
 Adaptive-Fusion-For-Stock-Portfolio-Optimization/
-|-- Scrapers/
-|   |-- GDELTscraper.py              # GDELT news headline collection
-|   +-- twitter_scraper.py           # Selenium-based tweet collection
-|-- Preprocessing/
-|   |-- news_preprocessing_labelling.ipynb
-|   +-- tweets_preprocessing_labelling.ipynb
-|-- Sentiment_Model/
-|   |-- RoBERTa-Train/                # Fine-tuning scripts and training data
-|   +-- model_evaluation.ipynb        # FIN-RoBERTa benchmark evaluation
-|-- Portfolio_Optimizer/
-|   |-- Adaptive_Fusion_POC.ipynb     # Main research notebook (base backtest)
-|   |-- Adaptive_Fusion_POC_StopLoss.ipynb  # Stop-loss ablation notebook
-|   |-- fusion_network.pt             # Pre-trained model weights (Fixed)
 |-- Dashboard/
-|   |-- backend/                      # Python package (11 modules)
-|   |   |-- config.py                 #   Centralised hyperparameters
-|   |   |-- model.py                  #   Attention network and training
+|   |-- backend/                      # Python package (9 modules)
 |   |   |-- backtest.py               #   Walk-forward backtest engine
+|   |   |-- config.py                 #   Centralised hyperparameters
+|   |   |-- data.py                   #   Data loading utilities
+|   |   |-- features.py               #   Technical factor engineering
+|   |   |-- model.py                  #   Attention network and training
+|   |   |-- news_preprocessing.py     #   News data preprocessing
 |   |   |-- optimizer.py              #   Black-Litterman and Sharpe MVO
 |   |   |-- sentiment.py              #   FIN-RoBERTa inference wrapper
-|   |   |-- features.py               #   Technical factor engineering
-|   |   |-- data.py                   #   Data loading utilities
-|   |   |-- news_preprocessing.py     #   News data preprocessing
 |   |   +-- tweets_preprocessing.py   #   Tweet data preprocessing
 |   |-- frontend/                     # Streamlit web application
 |   |   |-- about.py                  #   System status dashboard
 |   |   |-- data_collection.py        #   Data acquisition interface
 |   |   +-- portfolio_simulation.py   #   Portfolio simulation page
+|   |-- fusion_network.pt             # Warmstart model
+|   |-- main.py                       # Streamlit application entry point
 |   |-- services/                     # Subprocess managers
 |   |   |-- gdelt_runner.py           #   News scraper execution
-|   |   |-- twitter_runner.py         #   Tweet scraper execution
-|   |   +-- sentiment_runner.py       #   Sentiment scoring execution
-|   |-- tests/                        # Unit test suite (pytest)
-|   |   |-- test_features.py          #   20 tests for technical indicators
-|   |   |-- test_model.py             #   13 tests for attention network
-|   |   +-- test_optimizer.py         #   17 tests for BL and MVO
-|   +-- main.py                       # Streamlit application entry point
+|   |   |-- sentiment_runner.py       #   Sentiment scoring execution
+|   |   +-- twitter_runner.py         #   Tweet scraper execution
+|   +-- tests/                        # Unit test suite (pytest)
+|       |-- test_features.py          #   20 tests for technical indicators
+|       |-- test_model.py             #   13 tests for attention network
+|       +-- test_optimizer.py         #   17 tests for BL and MVO
 |-- Diagrams/                         # Architecture diagrams and result figures
+|-- Portfolio_Optimizer/
+|   |-- Adaptive_Fusion_POC.ipynb           # Main research notebook (base backtest)
+|   |-- Adaptive_Fusion_POC_StopLoss.ipynb  # Stop-loss ablation notebook
+|   +-- fusion_network.pt                   # Pre-trained model weights (Fixed)
+|-- Preprocessing/
+|   |-- news_preprocessing_labelling.ipynb
+|   +-- tweets_preprocessing_labelling.ipynb
+|-- Processed_Data/                   # Daily sentiment CSV files
 |-- Raw_Data/                         # Unprocessed scraper outputs
-|-- Processed_Data/                   # Daily sentiment CSV files              
+|-- README.md
 |-- requirements.txt
-+-- README.md
+|-- Scrapers/
+|   |-- GDELTscraper.py               # GDELT news headline collection
+|   +-- twitter_scraper.py            # Selenium-based tweet collection
++-- Sentiment_Model/
+    |-- model_evaluation.ipynb        # FIN-RoBERTa benchmark evaluation
+    +-- RoBERTa-Train/                # Fine-tuning scripts and training data
 ```
 
 ## Installation
