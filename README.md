@@ -98,7 +98,7 @@ Five strategies of increasing complexity are compared to isolate the contributio
   <img src="Diagrams/AdaptiveFusionDiagram/5_factor_attribution.png" alt="Average attention weights assigned to each factor" width="700"/>
 </p>
 
-The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (32.1%), 5-day reversal (20.9%), and abnormal volume (15.4%) account for 68.4% of the attention budget. News sentiment (8.8%) and social sentiment (4.5%) receive a combined 13.3%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
+The attention network allocates the majority of weight to risk-based technical factors: idiosyncratic volatility (30.8%), 5-day reversal (21.7%), and abnormal volume (15.9%) account for 68.4% of the attention budget. News sentiment (8.7%) and social sentiment (4.9%) receive a combined 13.6%, indicating that sentiment serves as a complementary signal rather than the primary alpha driver for this large-cap universe.
 
 ### Volatility Regime Adaptation
 
@@ -322,7 +322,7 @@ A RoBERTa-base model (125M parameters) fine-tuned for three-class financial sent
 
 - **Historical data only:** The system operated entirely on historical Yahoo Finance data. Live deployment was not feasible as paper-trading platforms (such as Alpaca) do not support backtesting on historical data with custom models, and a data-source mismatch exists between Yahoo Finance prices and live execution feeds.
 - **Open price execution is unrealistic:** In real markets, the official open price is determined retrospectively by the opening auction; actual fill prices differ from the published open.
-- **Limited sentiment contribution:** Sentiment signals received only 13.3% of the attention budget; the majority of alpha came from adaptive weighting of technical factors. Sentiment may be more effective for smaller, less-covered stocks.
+- **Limited sentiment contribution:** Sentiment signals received only 13.6% of the attention budget; the majority of alpha came from adaptive weighting of technical factors. Sentiment may be more effective for smaller, less-covered stocks.
 - **Single backtest period:** The ~252-day evaluation window captures limited market conditions. Bootstrap confidence intervals overlap across strategies.
 - **Narrow universe:** 20 large-cap S&P 500 stocks only. Performance may differ for small-cap, international, or less liquid equities.
 - **Stop-loss assumes intraday data availability:** The stop-loss rule checks intraday lows, which are available historically from Yahoo Finance but would require real-time data feeds in a live setting.
