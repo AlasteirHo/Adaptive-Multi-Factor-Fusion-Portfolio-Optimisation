@@ -3,7 +3,7 @@
 Usage:
     python twitter_runner.py --start 2026-01-01 --end 2026-03-01 --tickers AAPL MSFT NVDA
 
-Credentials are loaded automatically from the .env file in the scrapers directory.
+Credentials are loaded automatically from the Dashboard's .env file.
 """
 
 import argparse
@@ -12,12 +12,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add scrapers directory to path and load .env from there
-SCRAPERS_DIR = Path(__file__).resolve().parents[2] / "scrapers"
-sys.path.insert(0, str(SCRAPERS_DIR))
+# Import the bundled scraper from this same folder; load .env from Dashboard root
+SERVICES_DIR = Path(__file__).resolve().parent
+DASHBOARD_DIR = SERVICES_DIR.parent
+sys.path.insert(0, str(SERVICES_DIR))
 
 from dotenv import load_dotenv
-load_dotenv(SCRAPERS_DIR.parent / ".env")
+load_dotenv(DASHBOARD_DIR / ".env")
 
 from twitter_scraper import (  # noqa: E402
     TwitterScraper,

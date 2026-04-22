@@ -8,26 +8,25 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-# ---- Paths (relative to FYP root) ----
+# ---- Paths (all resolve inside the Dashboard directory) ----
 PRODUCT_DIR          = Path(__file__).resolve().parents[1]
-FYP_DIR              = PRODUCT_DIR.parent
 
 # ---- Conda environment ----
 CONDA_ENV_NAME = "fyp-gpu"
 _conda_root = Path(os.environ["CONDA_EXE"]).parents[1] if "CONDA_EXE" in os.environ else None
 _conda_env_python = _conda_root / "envs" / CONDA_ENV_NAME / "python.exe" if _conda_root else None
 PYTHON_EXE = str(_conda_env_python) if _conda_env_python and _conda_env_python.exists() else sys.executable
-NEWS_SENTIMENT_DIR   = FYP_DIR / "Processed_Data" / "news_sentiment_daily"
-SOCIAL_SENTIMENT_DIR = FYP_DIR / "Processed_Data" / "tweets_sentiment_daily"
-OPTIMIZER_DIR        = FYP_DIR / "portfolio_optimizer"
+NEWS_SENTIMENT_DIR   = PRODUCT_DIR / "Processed_Data" / "news_sentiment_daily"
+SOCIAL_SENTIMENT_DIR = PRODUCT_DIR / "Processed_Data" / "tweets_sentiment_daily"
 # Dashboard artefact location. The Portfolio Simulation page upserts rows
 # into metrics_summary.csv after each run; strategies not re-run keep their
 # existing values.
-OUTPUT_DIR           = OPTIMIZER_DIR / "outputs"
+OUTPUT_DIR           = PRODUCT_DIR / "outputs"
+OPTIMIZER_DIR        = OUTPUT_DIR
 MODEL_PATH           = PRODUCT_DIR / "fusion_network.pt"
-SCRAPERS_DIR         = FYP_DIR / "scrapers"
-RAW_NEWS_DIR         = FYP_DIR / "Raw_Data" / "gdelt_news_data"
-RAW_TWEETS_DIR       = FYP_DIR / "Raw_Data" / "Tweets"
+SCRAPERS_DIR         = PRODUCT_DIR / "services"
+RAW_NEWS_DIR         = PRODUCT_DIR / "Raw_Data" / "gdelt_news_data"
+RAW_TWEETS_DIR       = PRODUCT_DIR / "Raw_Data" / "Tweets"
 RUNNERS_DIR          = PRODUCT_DIR / "services"
 TRADE_LOG_PATH       = OUTPUT_DIR / "adaptive_fusion_trade_log.csv"
 METRICS_PATH         = OUTPUT_DIR / "metrics_summary.csv"
@@ -80,8 +79,8 @@ def _detect_data_start(*dirs: Path):
     return str(earliest.normalize().date())
 
 DATA_START = _detect_data_start(
-    FYP_DIR / "Processed_Data" / "news_sentiment_daily",
-    FYP_DIR / "Processed_Data" / "tweets_sentiment_daily",
+    NEWS_SENTIMENT_DIR,
+    SOCIAL_SENTIMENT_DIR,
 )
 TRAIN_START    = DATA_START
 TRAIN_END      = BACKTEST_START

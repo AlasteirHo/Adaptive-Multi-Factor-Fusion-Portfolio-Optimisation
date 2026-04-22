@@ -10,9 +10,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add scrapers directory to path
-SCRAPERS_DIR = Path(__file__).resolve().parents[2] / "scrapers"
-sys.path.insert(0, str(SCRAPERS_DIR))
+# Import the bundled scraper from this same folder
+SERVICES_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SERVICES_DIR))
 
 import GDELTscraper  # noqa: E402
 
