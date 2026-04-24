@@ -259,7 +259,7 @@ Adaptive-Fusion-For-Stock-Portfolio-Optimization/
 
    [https://drive.google.com/file/d/1fZXP7-HeDjBaVtzZQEIwyxAS4TVGoy52/view?usp=sharing](https://drive.google.com/file/d/1fZXP7-HeDjBaVtzZQEIwyxAS4TVGoy52/view?usp=sharing)
 
-   Unpack the archive into the project root so that the `Raw_Data/` and `Processed_Data/` directories sit alongside `Scrapers/`, `Portfolio_Optimizer/`, and `Dashboard/`. Skipping this step means you will need to run the scrapers and preprocessing notebooks from scratch (Steps 1 through 3 below) to regenerate the data.
+   Unpack the archive into the project root and `Dashboard/` so that the `Raw_Data/` and `Processed_Data/` directories sit alongside `Scrapers/` and `Portfolio_Optimizer/`. Skipping this step means you will need to run the scrapers and preprocessing notebooks from scratch (Steps 1 through 3 below) to regenerate the data.
 
 ## Usage
 
